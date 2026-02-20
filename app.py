@@ -564,7 +564,7 @@ st.markdown(
 
 p = st.session_state.player
 
-# ---------- Sidebar ----------
+# ---------- Sidebar & page selection (Intro hidden after build) ----------
 
 st.sidebar.title("Trip Status")
 st.sidebar.write(f"Collector: {p['name'] or '—'}")
@@ -584,10 +584,16 @@ st.sidebar.write(f"Big deals closed: {len(p['badges'])}")
 st.sidebar.write(f"Influencers out‑negotiated: {len(p['elite_defeated'])}/4")
 st.sidebar.write("National Whale beaten: ✅" if p["champion_defeated"] else "National Whale beaten: ❌")
 
-page = st.sidebar.radio(
-    "Go to",
-    ["Intro & Build", "Show Floor", "Encounter", "Big Stages & Legends", "Collection & Results"],
-)
+if p["build_locked"]:
+    page_options = ["Show Floor", "Encounter", "Big Stages & Legends", "Collection & Results"]
+else:
+    page_options = ["Intro & Build", "Show Floor", "Encounter", "Big Stages & Legends", "Collection & Results"]
+
+page = st.sidebar.radio("Go to", page_options)
+
+# Force Intro until build is locked
+if not p["build_locked"]:
+    page = "Intro & Build"
 
 # ---------- Pages ----------
 
@@ -693,14 +699,11 @@ elif page == "Encounter":
     elif enc is None or not enc.active:
         st.write("No active encounter. Head to the Show Floor or Big Stages to find a deal.")
     else:
-        # Two main columns: left = scene, right = controls
         left_col, right_col = st.columns([3, 2], gap="large")
 
         with left_col:
-            # Scene image
             st.image("003_image.png", use_column_width=True)
 
-            # Info strip (day / time / zone / NPC line)
             zone_meta = ZONE_META.get(enc.zone, {"icon": "🎪"})
             npc_meta = NPC_META.get(enc.npc_type, {"icon": "🙂"})
 
@@ -721,7 +724,6 @@ elif page == "Encounter":
                 unsafe_allow_html=True,
             )
 
-            # Deal resistance bar (full width)
             hp_ratio = enc.npc_hp / enc.npc_max_hp if enc.npc_max_hp > 0 else 0
             st.markdown(
                 """
@@ -734,12 +736,10 @@ elif page == "Encounter":
             st.progress(hp_ratio)
             st.caption(f"Deal resistance: {enc.npc_hp}/{enc.npc_max_hp} • Patience left: {enc.patience}")
 
-            # Recent conversation
             st.markdown("#### Recent conversation")
             for line in enc.history[-5:]:
                 st.write("•", line)
 
-            # Cards table
             st.markdown("#### Cards on the table")
             st.table(
                 [
@@ -758,7 +758,6 @@ elif page == "Encounter":
         with right_col:
             st.markdown("### Your moves")
 
-            # Cash offer input
             total_ask = sum(c.ask_price for c in enc.cards)
             offer = st.number_input(
                 "Cash offer",
@@ -767,13 +766,11 @@ elif page == "Encounter":
                 key="cash_offer_input",
             )
 
-            # First row of buttons
             b_row1 = st.columns(3, gap="small")
             friendly = b_row1[0].button("Friendly chat")
             flaws = b_row1[1].button("Point out flaws")
             lowball = b_row1[2].button("Lowball probe")
 
-            # Second row of buttons
             b_row2 = st.columns(3, gap="small")
             comps = b_row2[0].button("Show comps")
             make_offer = b_row2[1].button("Make offer")
@@ -815,7 +812,6 @@ elif page == "Encounter":
                         elif enc.mood == "neutral":
                             enc.mood = "grumpy"
 
-            # Trade section
             st.markdown("### Trade offer (cards + cash)")
 
             collection = p["collection"]
