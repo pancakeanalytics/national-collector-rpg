@@ -10,18 +10,15 @@ st.set_page_config(page_title="National Collector RPG", layout="wide")
 st.markdown(
     """
     <style>
-    /* Soft gradient app background */
     .stApp {
         background-image: radial-gradient(circle at top left, #ffffff 0, #f7f7ff 50%, #f0f0ff 100%);
     }
-    /* Table zebra striping, subtle */
     .stTable tbody tr:nth-child(even) {
         background-color: #fafaff;
     }
     .stTable th {
         background-color: #f0f0ff !important;
     }
-    /* Pill-like primary buttons */
     button[kind="primary"] {
         border-radius: 999px !important;
         font-weight: 600 !important;
@@ -31,7 +28,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # ---------- Data models ----------
 
 @dataclass
@@ -40,8 +36,8 @@ class Card:
     player: str
     year: int
     set_name: str
-    true_value: float  # internal market value
-    ask_price: float   # NPC initial ask
+    true_value: float
+    ask_price: float
 
 
 @dataclass
@@ -88,42 +84,108 @@ NPC_BEHAVIOR = {
     "PC Supercollector": {"overask": (1.15, 1.3), "min_pct": 0.85},
 }
 
+BUILD_SUMMARY = {
+    "Budget Grinder": (
+        "The Spreadsheet Warrior",
+        "You plan every show like a spreadsheet: budget dialed in, comps memorized, and a firm rule that the hobby must fund itself. "
+        "You’re here to cover the trip and sneak in a smart PC upgrade."
+    ),
+    "PC Diehard": (
+        "The True Believer",
+        "You’re obsessed with one story told in cardboard: your player, your team, your era. "
+        "Profit is nice, but the real win is going home saying, “I finally found it.”"
+    ),
+    "Flipper-in-Training": (
+        "The Hustle Apprentice",
+        "You see the hobby as a living market. You chase comps, edges, and arbitrage, dreaming of turning a small case into a big story. "
+        "You’ll learn that face-to-face deals hit different than online listings."
+    ),
+}
 
 # ---------- Game helpers ----------
 
-def init_state():
-    st.session_state.player = {
-        "cash": 1000.0,
+def base_player_state():
+    return {
+        "name": "",
+        "favorite": "",
+        "archetype": None,
+        "cash": 0.0,
         "stamina": 100,
-        "negotiation_skill": 1.0,  # 1–5
+        "negotiation_skill": 1.0,
         "day": 1,
-        "time_block": "Morning",  # Morning / Afternoon / Evening
+        "time_block": "Morning",   # now flavor-only
+        "xp": 0,
+        "level": 1,
         "goals": {
-            "target_pc_card": "Star QB Rookie",
-            "profit_target": 300.0,
+            "target_pc_card": "",
+            "profit_target": 0.0,
         },
         "collection": [],
         "profit": 0.0,
+        "build_locked": False,
     }
+
+
+def init_state():
+    st.session_state.player = base_player_state()
     st.session_state.encounter: Optional[Encounter] = None
 
 
-def advance_time(cost_stamina=10):
-    """Advance time within the day and drain stamina."""
-    time_order = ["Morning", "Afternoon", "Evening"]
+def roll_collector_build():
+    """Randomly assign a collector build based on name/favorite."""
     player = st.session_state.player
-    idx = time_order.index(player["time_block"])
-    player["stamina"] = max(0, player["stamina"] - cost_stamina)
+    archetype = random.choice(["Budget Grinder", "PC Diehard", "Flipper-in-Training"])
+
+    if archetype == "Budget Grinder":
+        cash = 1500.0
+        negotiation_skill = 0.8
+        profit_target = 400.0
+    elif archetype == "PC Diehard":
+        cash = 800.0
+        negotiation_skill = 1.0
+        profit_target = 200.0
+    else:  # Flipper-in-Training
+        cash = 1000.0
+        negotiation_skill = 1.4
+        profit_target = 600.0
+
+    player["archetype"] = archetype
+    player["cash"] = cash
+    player["negotiation_skill"] = negotiation_skill
+    player["goals"]["profit_target"] = profit_target
+    if not player["goals"]["target_pc_card"]:
+        player["goals"]["target_pc_card"] = (
+            f"Grail for {player['favorite']}" if player["favorite"] else "A true PC grail"
+        )
+    player["build_locked"] = True
+
+
+def advance_flavor_time():
+    """Advance 'time' for flavor only, tied loosely to actions."""
+    time_order = ["Morning", "Afternoon", "Evening"]
+    p = st.session_state.player
+    idx = time_order.index(p["time_block"])
     if idx < len(time_order) - 1:
-        player["time_block"] = time_order[idx + 1]
+        p["time_block"] = time_order[idx + 1]
     else:
-        player["day"] += 1
-        player["time_block"] = "Morning"
-        player["stamina"] = 100
+        p["time_block"] = "Morning"
+        p["day"] += 1
+
+
+def add_xp(amount: int):
+    p = st.session_state.player
+    p["xp"] += amount
+    thresholds = [0, 50, 150, 300, 500, 750]
+    new_level = p["level"]
+    for i, t in enumerate(thresholds, start=1):
+        if p["xp"] >= t:
+            new_level = i
+    if new_level > p["level"]:
+        p["level"] = new_level
+        advance_flavor_time()
 
 
 def generate_cards_for_zone(zone: str, npc_type: str) -> List[Card]:
-    """Zone + NPC-based card generator."""
     base_cards = []
     if zone == "Vintage Alley":
         base_cards = [
@@ -154,9 +216,9 @@ def generate_cards_for_zone(zone: str, npc_type: str) -> List[Card]:
     lo, hi = behavior["overask"]
 
     cards = []
-    for name, player, year, set_name, true_value in base_cards:
+    for name, player_name, year, set_name, true_value in base_cards:
         ask = round(true_value * random.uniform(lo, hi), 2)
-        cards.append(Card(name, player, year, set_name, true_value, ask))
+        cards.append(Card(name, player_name, year, set_name, true_value, ask))
     return cards
 
 
@@ -173,7 +235,6 @@ def start_encounter(zone: str):
         active=True,
         history=[f"You approach a {npc_type} in {zone}. They seem {mood}."],
     )
-    advance_time(cost_stamina=5)
 
 
 def evaluate_offer(offer: float) -> str:
@@ -190,6 +251,11 @@ def evaluate_offer(offer: float) -> str:
         "neutral": base_min_pct,
         "grumpy": base_min_pct + 0.05,
     }[enc.mood]
+
+    if player["archetype"] == "Budget Grinder" and enc.zone == "Dollar Boxes":
+        mood_factor -= 0.03
+    if player["archetype"] == "Flipper-in-Training" and enc.npc_type in ["Dealer", "Flipper"]:
+        mood_factor -= 0.03
 
     skill_discount = 0.03 * (skill - 1)
     threshold = total_true * max(0.6, mood_factor - skill_discount)
@@ -219,9 +285,13 @@ def finalize_deal(price_paid: float):
         f"Deal done at ${price_paid:.2f}. Estimated value ${total_true:.2f}."
     )
 
+    # XP: base on profit margin
+    margin = total_true - price_paid
+    xp_gain = max(5, int(margin / 20))  # tweakable
+    add_xp(xp_gain)
+
 
 def pick_trade_card():
-    """Pick a random card from player's collection, if any."""
     coll = st.session_state.player["collection"]
     if not coll:
         return None
@@ -232,7 +302,6 @@ def pick_trade_card():
 
 if "player" not in st.session_state:
     init_state()
-
 
 # ---------- Header/banner ----------
 
@@ -251,100 +320,123 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
-# ---------- Sidebar (status) ----------
-
 p = st.session_state.player
 
+# ---------- Sidebar ----------
+
 st.sidebar.title("Trip Status")
-st.sidebar.write(f"Day: {p['day']}")
-st.sidebar.write(f"Time: {p['time_block']}")
+st.sidebar.write(f"Collector: {p['name'] or '—'}")
+st.sidebar.write(f"Archetype: {p['archetype'] or '—'}")
+st.sidebar.write(f"Day (chapter): {p['day']}")
+st.sidebar.write(f"Time (flavor): {p['time_block']}")
+st.sidebar.write(f"Level: {p['level']}  |  XP: {p['xp']}")
 st.sidebar.write(f"Cash: ${p['cash']:.2f}")
 st.sidebar.write(f"Stamina: {p['stamina']}")
 st.sidebar.write(f"Negotiation Skill: {p['negotiation_skill']:.1f}")
 st.sidebar.markdown("**Goals**")
-st.sidebar.write(f"Target PC Card: {p['goals']['target_pc_card']}")
+st.sidebar.write(f"Target PC: {p['goals']['target_pc_card'] or '—'}")
 st.sidebar.write(f"Profit target: ${p['goals']['profit_target']:.2f}")
 st.sidebar.write(f"Trip profit: ${p['profit']:.2f}")
 
-
-# ---------- Navigation ----------
-
 page = st.sidebar.radio(
     "Go to",
-    ["Prep & Goals", "Show Floor", "Encounter", "Collection & Results"],
+    ["Intro & Build", "Show Floor", "Encounter", "Collection & Results"],
 )
-
 
 # ---------- Pages ----------
 
-if page == "Prep & Goals":
-    st.title("Prep & Goals")
-    st.write("Set up your trip goals before diving into The National.")
+if page == "Intro & Build":
+    st.title("Intro & Build")
+    st.write("Enter who you are, then let fate deal you a collector build for this National.")
 
     col1, col2 = st.columns(2)
     with col1:
-        target_card = st.text_input(
-            "Target PC card description",
-            p["goals"]["target_pc_card"],
-        )
+        name = st.text_input("Collector name", value=p["name"])
     with col2:
-        profit_target = st.number_input(
-            "Profit target for the trip",
-            0.0, 10000.0, p["goals"]["profit_target"], step=50.0,
-        )
+        favorite = st.text_input("Favorite player or team", value=p["favorite"])
 
-    if st.button("Update goals"):
-        p["goals"]["target_pc_card"] = target_card
-        p["goals"]["profit_target"] = profit_target
-        st.success("Goals updated!")
-
-    st.divider()
-    st.markdown(
-        "Tip: Plan a couple of grails and a realistic flip target, just like prepping for the real National."
+    target_pc = st.text_input(
+        "Describe your dream PC pickup for this trip",
+        value=p["goals"]["target_pc_card"],
     )
 
-elif page == "Show Floor":
-    st.title("Show Floor")
-    st.write("Choose where to head next at The National.")
+    st.write("When you start the trip, the game will randomly assign you a collector archetype with perks and flaws.")
 
-    if p["stamina"] <= 0:
-        st.warning("You are exhausted. Advancing to the next day...")
-        advance_time(cost_stamina=0)
+    if st.button("Start trip / roll build", disabled=p["build_locked"] and p["archetype"]):
+        p["name"] = name or "Unnamed Collector"
+        p["favorite"] = favorite
+        p["goals"]["target_pc_card"] = target_pc
+        roll_collector_build()
+        st.success("Build locked in! Scroll down to see who you are this trip.")
 
-    st.markdown("#### Zones")
-
-    for name in ZONES:
-        meta = ZONE_META[name]
+    if p["archetype"]:
+        title, summary = BUILD_SUMMARY[p["archetype"]]
+        st.divider()
         st.markdown(
             f"""
             <div style="
-                padding:0.55rem 0.8rem;
-                margin-bottom:0.4rem;
-                border-radius:0.6rem;
-                border:1px solid #e0e0ff;
-                background-color:#ffffff;">
-                <span style="font-size:1.1rem; margin-right:0.35rem;">{meta['icon']}</span>
-                <span style="font-weight:600;">{name}</span>
+                padding:0.9rem 1.1rem;
+                background-color:#ffffff;
+                border-radius:0.9rem;
+                border:2px solid #e0e0ff;
+                box-shadow:0 2px 6px rgba(0,0,0,0.04);
+                margin-bottom:0.8rem;">
+                <p style="margin:0.1rem 0; color:#777;">
+                    Welcome, <b>{p['name']}</b>. Fate dealt you:
+                </p>
+                <p style="margin:0.15rem 0; font-weight:600;">
+                    {p['archetype']} – <span style="color:#e63946;">{title}</span>
+                </p>
+                <p style="margin:0.15rem 0;">
+                    {summary}
+                </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    st.divider()
-    zone = st.selectbox("Where do you want to go?", ZONES)
+elif page == "Show Floor":
+    st.title("Show Floor")
 
-    if st.button("Walk to this zone"):
-        start_encounter(zone)
-        st.success(f"You walk over to {zone} and spot a potential deal.")
-        st.info("Switch to the 'Encounter' page to negotiate.")
+    if not p["build_locked"]:
+        st.warning("Head to 'Intro & Build' first to roll your collector build.")
+    else:
+        st.write("Choose where to head next at The National.")
+
+        st.markdown("#### Zones")
+        for name in ZONES:
+            meta = ZONE_META[name]
+            st.markdown(
+                f"""
+                <div style="
+                    padding:0.55rem 0.8rem;
+                    margin-bottom:0.4rem;
+                    border-radius:0.6rem;
+                    border:1px solid #e0e0ff;
+                    background-color:#ffffff;">
+                    <span style="font-size:1.1rem; margin-right:0.35rem;">{meta['icon']}</span>
+                    <span style="font-weight:600;">{name}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.divider()
+        zone = st.selectbox("Where do you want to go?", ZONES)
+
+        if st.button("Walk to this zone"):
+            start_encounter(zone)
+            st.success(f"You walk over to {zone} and spot a potential deal.")
+            st.info("Switch to the 'Encounter' page to negotiate.")
 
 elif page == "Encounter":
     st.title("Encounter")
 
     enc: Encounter = st.session_state.encounter
 
-    if enc is None or not enc.active:
+    if not p["build_locked"]:
+        st.warning("Head to 'Intro & Build' first to roll your collector build.")
+    elif enc is None or not enc.active:
         st.write("No active encounter. Head to the Show Floor to find a deal.")
     else:
         zone_meta = ZONE_META.get(enc.zone, {"icon": "🎪"})
@@ -431,14 +523,12 @@ elif page == "Encounter":
                             enc.mood = "neutral"
                         elif enc.mood == "neutral":
                             enc.mood = "grumpy"
-                        advance_time(cost_stamina=3)
 
             if sweeten:
                 st.info("You reference comps and build rapport. They soften a bit.")
                 if enc.mood == "grumpy":
                     enc.mood = "neutral"
                 enc.history.append("You talk comps; they seem slightly more open.")
-                advance_time(cost_stamina=2)
 
             if trade_btn:
                 trade_card = pick_trade_card()
@@ -454,6 +544,7 @@ elif page == "Encounter":
                         st.session_state.player["collection"].remove(trade_card)
                         st.session_state.player["collection"].append(asdict(target_card))
                         enc.active = False
+                        add_xp(15)
                     else:
                         st.warning("They decline the trade. Maybe sweeten the deal or add cash.")
                         enc.round += 1
@@ -461,12 +552,10 @@ elif page == "Encounter":
             if walk:
                 enc.history.append("You walk away from the table.")
                 enc.active = False
-                advance_time(cost_stamina=1)
                 st.write("You leave this dealer and head back to the floor.")
 
 elif page == "Collection & Results":
     st.title("Collection & Trip Results")
-    st.write("See what you picked up and how your trip is going.")
 
     st.subheader("Collection")
     if p["collection"]:
@@ -478,10 +567,23 @@ elif page == "Collection & Results":
 
     st.subheader("Trip summary")
     st.write(f"Trip profit (estimated): ${p['profit']:.2f}")
+    st.write(f"Level: {p['level']}  |  XP: {p['xp']}")
     st.write(f"Negotiation skill: {p['negotiation_skill']:.1f}")
+
+    hit_pc = any(
+        p["goals"]["target_pc_card"]
+        and p["goals"]["target_pc_card"].lower() in c["name"].lower()
+        for c in p["collection"]
+    )
 
     if p["profit"] >= p["goals"]["profit_target"]:
         st.success("You hit your profit target for the trip!")
     else:
         remaining = p["goals"]["profit_target"] - p["profit"]
         st.info(f"You need ${remaining:.2f} more profit to hit your target.")
+
+    if p["goals"]["target_pc_card"]:
+        if hit_pc:
+            st.success("You found something that fits your PC goal. Story-worthy pickup achieved.")
+        else:
+            st.info("You might still be chasing that perfect PC card—but the hunt continues.")
