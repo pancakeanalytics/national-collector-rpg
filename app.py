@@ -693,42 +693,53 @@ elif page == "Encounter":
     elif enc is None or not enc.active:
         st.write("No active encounter. Head to the Show Floor or Big Stages to find a deal.")
     else:
-        st.image("003_image.png", use_column_width=True)
+        # Two main columns: left = scene, right = controls
+        left_col, right_col = st.columns([3, 2], gap="large")
 
-        zone_meta = ZONE_META.get(enc.zone, {"icon": "🎪"})
-        npc_meta = NPC_META.get(enc.npc_type, {"icon": "🙂"})
+        with left_col:
+            # Scene image
+            st.image("003_image.png", use_column_width=True)
 
-        st.markdown(
-            f"""
-            <div style="
-                padding:0.9rem 1.1rem;
-                background-color:#ffffff;
-                border-radius:0.9rem;
-                border:2px solid #e0e0ff;
-                box-shadow:0 2px 6px rgba(0,0,0,0.04);
-                margin-bottom:0.6rem;">
-                <p style="margin:0.1rem 0; color:#777;">
-                    Day {p['day']} • {p['time_block']} • {zone_meta['icon']} {enc.zone}
-                </p>
-                <p style="margin:0.15rem 0; font-weight:600;">
-                    {npc_meta['icon']} A <span style="color:#e63946;">{enc.npc_type}</span> appears. They seem <b>{enc.mood}</b>.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            # Info strip (day / time / zone / NPC line)
+            zone_meta = ZONE_META.get(enc.zone, {"icon": "🎪"})
+            npc_meta = NPC_META.get(enc.npc_type, {"icon": "🙂"})
 
-        hp_ratio = enc.npc_hp / enc.npc_max_hp if enc.npc_max_hp > 0 else 0
-        st.progress(hp_ratio)
-        st.caption(f"Deal resistance: {enc.npc_hp}/{enc.npc_max_hp}  •  Patience left: {enc.patience}")
+            st.markdown(
+                f"""
+                <div style="
+                    margin-top:0.4rem;
+                    padding:0.4rem 0.7rem;
+                    background-color:#ffffff;
+                    border-radius:0.6rem;
+                    border:1px solid #e0e0ff;">
+                    <span style="color:#777;">Day {p['day']} • {p['time_block']} • </span>
+                    <span>{zone_meta['icon']} {enc.zone}</span><br/>
+                    <span style="color:#b20000;">{npc_meta['icon']} A {enc.npc_type} appears.</span>
+                    <span style="color:#555;"> They seem {enc.mood}.</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        st.markdown("#### Recent conversation")
-        for line in enc.history[-5:]:
-            st.write("•", line)
+            # Deal resistance bar (full width)
+            hp_ratio = enc.npc_hp / enc.npc_max_hp if enc.npc_max_hp > 0 else 0
+            st.markdown(
+                """
+                <div style="margin-top:0.5rem; margin-bottom:0.15rem; color:#777; font-size:0.8rem;">
+                    Deal resistance
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.progress(hp_ratio)
+            st.caption(f"Deal resistance: {enc.npc_hp}/{enc.npc_max_hp} • Patience left: {enc.patience}")
 
-        left, right = st.columns([2, 1], gap="medium")
+            # Recent conversation
+            st.markdown("#### Recent conversation")
+            for line in enc.history[-5:]:
+                st.write("•", line)
 
-        with left:
+            # Cards table
             st.markdown("#### Cards on the table")
             st.table(
                 [
@@ -744,23 +755,29 @@ elif page == "Encounter":
                 ]
             )
 
-        with right:
-            st.markdown("#### Your moves")
+        with right_col:
+            st.markdown("### Your moves")
+
+            # Cash offer input
             total_ask = sum(c.ask_price for c in enc.cards)
             offer = st.number_input(
                 "Cash offer",
-                0.0, 10000.0, min(total_ask, p["cash"]), step=5.0,
+                0.0, 10000.0, min(total_ask, p["cash"]),
+                step=5.0,
+                key="cash_offer_input",
             )
 
-            move_row1 = st.columns(3, gap="small")
-            friendly = move_row1[0].button("Friendly chat")
-            flaws = move_row1[1].button("Point out flaws")
-            lowball = move_row1[2].button("Lowball probe")
+            # First row of buttons
+            b_row1 = st.columns(3, gap="small")
+            friendly = b_row1[0].button("Friendly chat")
+            flaws = b_row1[1].button("Point out flaws")
+            lowball = b_row1[2].button("Lowball probe")
 
-            move_row2 = st.columns(3, gap="small")
-            comps = move_row2[0].button("Show comps")
-            make_offer = move_row2[1].button("Make offer")
-            walk = move_row2[2].button("Walk away")
+            # Second row of buttons
+            b_row2 = st.columns(3, gap="small")
+            comps = b_row2[0].button("Show comps")
+            make_offer = b_row2[1].button("Make offer")
+            walk = b_row2[2].button("Walk away")
 
             if friendly:
                 apply_move("friendly_chat")
@@ -798,7 +815,8 @@ elif page == "Encounter":
                         elif enc.mood == "neutral":
                             enc.mood = "grumpy"
 
-            st.markdown("##### Trade offer (cards + cash)")
+            # Trade section
+            st.markdown("### Trade offer (cards + cash)")
 
             collection = p["collection"]
             if collection:
@@ -828,7 +846,8 @@ elif page == "Encounter":
 
             trade_cash = st.number_input(
                 "Add cash to trade (optional)",
-                0.0, 10000.0, 0.0, step=5.0,
+                0.0, 10000.0, 0.0,
+                step=5.0,
                 key="trade_cash_input",
             )
 
