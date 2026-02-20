@@ -302,7 +302,6 @@ def generate_cards_for_zone(zone: str, npc_type: str) -> List[Card]:
 
 
 def init_encounter_state(enc: Encounter, tough_multiplier: float = 1.0):
-    """Attach HP, price factor, patience to an encounter."""
     enc.npc_hp = int(100 * tough_multiplier)
     enc.npc_max_hp = int(100 * tough_multiplier)
     enc.price_factor = 1.0 * tough_multiplier
@@ -441,7 +440,6 @@ def evaluate_offer(offer: float) -> str:
     if player["archetype"] == "Flipper-in-Training" and enc.npc_type in ["Dealer", "Flipper"]:
         mood_factor -= 0.03
 
-    # HP and price factor make it easier/harder
     hp_factor = max(0.5, enc.npc_hp / enc.npc_max_hp)
     effective_min_pct = mood_factor * enc.price_factor * hp_factor
 
@@ -495,14 +493,17 @@ def pick_trade_card():
     return random.choice(coll)
 
 
-# ---------- Negotiation moves that affect HP / price ----------
+def compute_collection_value(card_dicts):
+    return sum(c.get("true_value", 0) for c in card_dicts)
+
+
+# ---------- Negotiation moves ----------
 
 def apply_move(move: str):
     enc = st.session_state.encounter
     p = st.session_state.player
     npc = enc.npc_type
 
-    # base defaults
     hp_delta = 0
     price_delta = 0.0
     patience_delta = 0
@@ -717,7 +718,6 @@ elif page == "Encounter":
             unsafe_allow_html=True,
         )
 
-        # HP bar
         hp_ratio = enc.npc_hp / enc.npc_max_hp if enc.npc_max_hp > 0 else 0
         st.progress(hp_ratio)
         st.caption(f"Deal resistance: {enc.npc_hp}/{enc.npc_max_hp}  •  Patience left: {enc.patience}")
@@ -733,13 +733,14 @@ elif page == "Encounter":
             st.table(
                 [
                     {
+                        "Index": i,
                         "Card": c.name,
                         "Player": c.player,
                         "Year": c.year,
                         "Set": c.set_name,
                         "Ask ($)": c.ask_price,
                     }
-                    for c in enc.cards
+                    for i, c in enumerate(enc.cards)
                 ]
             )
 
@@ -760,8 +761,6 @@ elif page == "Encounter":
             comps = move_row2[0].button("Show comps")
             make_offer = move_row2[1].button("Make offer")
             walk = move_row2[2].button("Walk away")
-
-            trade_btn = st.button("Offer trade")
 
             if friendly:
                 apply_move("friendly_chat")
@@ -799,24 +798,94 @@ elif page == "Encounter":
                         elif enc.mood == "neutral":
                             enc.mood = "grumpy"
 
+            # --- Trade offer section: choose their cards + your cards + cash ---
+            st.markdown("##### Trade offer (cards + cash)")
+
+            collection = p["collection"]
+            if collection:
+                trade_labels = [
+                    f"{i}. {c['name']} ({c['set_name']} {c['year']}) – est ${c['true_value']:.2f}"
+                    for i, c in enumerate(collection)
+                ]
+                selected_indices = st.multiselect(
+                    "Your cards to offer",
+                    options=list(range(len(collection))),
+                    format_func=lambda i: trade_labels[i],
+                    key="my_trade_cards",
+                )
+            else:
+                selected_indices = []
+
+            npc_labels = [
+                f"{i}. {c.name} ({c.set_name} {c.year}) – est ${c.true_value:.2f}"
+                for i, c in enumerate(enc.cards)
+            ]
+            target_indices = st.multiselect(
+                "Cards you want from them",
+                options=list(range(len(enc.cards))),
+                format_func=lambda i: npc_labels[i],
+                key="npc_trade_cards",
+            )
+
+            trade_cash = st.number_input(
+                "Add cash to trade (optional)",
+                0.0, 10000.0, 0.0, step=5.0,
+                key="trade_cash_input",
+            )
+
+            trade_btn = st.button("Send trade offer")
+
             if trade_btn and enc.active:
-                trade_card = pick_trade_card()
-                if not trade_card:
-                    st.warning("You don't have anything in your case yet to trade.")
+                if not selected_indices and trade_cash <= 0:
+                    st.warning("Pick at least one of your cards or add some cash to make a trade offer.")
+                elif not target_indices:
+                    st.warning("Pick at least one of their cards you want.")
+                elif trade_cash > p["cash"]:
+                    st.error("You don't have that much cash for the trade.")
                 else:
-                    target_card = random.choice(enc.cards)
+                    offered_cards = [collection[i] for i in selected_indices]
+                    wanted_cards = [enc.cards[i] for i in target_indices]
+
+                    offered_value = compute_collection_value(offered_cards) + trade_cash
+                    target_value = sum(c.true_value for c in wanted_cards)
+
                     enc.history.append(
-                        f"You offer your {trade_card['name']} for their {target_card.name}."
+                        f"You offer {len(offered_cards)} card(s) + ${trade_cash:.2f} "
+                        f"for {len(wanted_cards)} of their card(s) "
+                        f"(your offer est ${offered_value:.2f} vs their est ${target_value:.2f})."
                     )
-                    if trade_card["true_value"] >= target_card.true_value * 0.9:
+
+                    if offered_value >= target_value * 0.9:
                         st.success("They like the trade and accept!")
-                        st.session_state.player["collection"].remove(trade_card)
-                        st.session_state.player["collection"].append(asdict(target_card))
+                        # Remove offered cards from your collection
+                        for idx in sorted(selected_indices, reverse=True):
+                            p["collection"].pop(idx)
+                        # Add their cards to your collection
+                        for c in wanted_cards:
+                            p["collection"].append(asdict(c))
+                        # Remove those cards from encounter's lot (they give them to you)
+                        for idx in sorted(target_indices, reverse=True):
+                            enc.cards.pop(idx)
+                        p["cash"] -= trade_cash
                         enc.active = False
-                        add_xp(15)
+                        add_xp(20)
+                    elif offered_value >= target_value * 0.7:
+                        st.info("They think about it and counter higher.")
+                        enc.history.append(
+                            f"{enc.npc_type}: 'You’re close, but I’d need more to move these.'"
+                        )
+                        enc.price_factor += 0.05
+                        enc.npc_hp = min(enc.npc_max_hp, enc.npc_hp + 10)
                     else:
-                        st.warning("They decline the trade. Maybe sweeten the deal or add cash.")
-                        enc.round += 1
+                        st.warning("They decline the trade and seem unimpressed.")
+                        enc.history.append(
+                            f"{enc.npc_type}: 'That trade’s not even close.' (They get tougher.)"
+                        )
+                        enc.npc_hp = min(enc.npc_max_hp, enc.npc_hp + 15)
+                        enc.patience -= 1
+                        if enc.patience <= 0:
+                            enc.active = False
+                            enc.history.append(f"{enc.npc_type} has had enough and walks away.")
 
             if walk and enc.active:
                 enc.history.append("You walk away from the table.")
