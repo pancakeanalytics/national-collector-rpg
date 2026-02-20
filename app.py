@@ -693,6 +693,8 @@ elif page == "Encounter":
     elif enc is None or not enc.active:
         st.write("No active encounter. Head to the Show Floor or Big Stages to find a deal.")
     else:
+        st.image("003_image.png", use_column_width=True)
+
         zone_meta = ZONE_META.get(enc.zone, {"icon": "🎪"})
         npc_meta = NPC_META.get(enc.npc_type, {"icon": "🙂"})
 
@@ -796,7 +798,6 @@ elif page == "Encounter":
                         elif enc.mood == "neutral":
                             enc.mood = "grumpy"
 
-            # Trade offer: choose your cards + their cards + cash
             st.markdown("##### Trade offer (cards + cash)")
 
             collection = p["collection"]
