@@ -265,11 +265,7 @@ def add_xp(amount: int):
 
 
 def grant_xp_for_deal(zone: str, margin: float, is_trade: bool, is_sale: bool = False):
-    """
-    XP based on zone, how good the deal was (margin), and whether it was a trade or sale.
-    margin > 0 means you came out ahead; margin < 0 means you overpaid / sold low.
-    """
-    base = 5  # floor XP each meaningful interaction
+    base = 5
 
     zone_factor = {
         "Dollar Boxes": 0.8,
@@ -685,34 +681,48 @@ elif page == "Show Floor":
     if not p["build_locked"]:
         st.warning("Head to 'Intro & Build' first to roll your collector build.")
     else:
-        st.image("002_image.png", use_column_width=True)
-        st.write("Choose where to head next at The National.")
+        left_col, right_col = st.columns([3, 2], gap="large")
 
-        st.markdown("#### Zones")
-        for name in ZONES:
-            meta = ZONE_META[name]
+        with left_col:
+            st.image("002_image.png", use_column_width=True)
+
             st.markdown(
-                f"""
-                <div style="
-                    padding:0.55rem 0.8rem;
-                    margin-bottom:0.4rem;
-                    border-radius:0.6rem;
-                    border:1px solid #e0e0ff;
-                    background-color:#ffffff;">
-                    <span style="font-size:1.1rem; margin-right:0.35rem;">{meta['icon']}</span>
-                    <span style="font-weight:600;">{name}</span>
-                </div>
-                """,
+                "<div style='margin-top:0.6rem; padding:0.6rem 0.8rem; "
+                "background-color:#ffffff; border-radius:0.7rem; "
+                "border:1px solid #e0e0ff;'>"
+                "<div style='font-size:0.85rem; color:#777; margin-bottom:0.25rem;'>"
+                "Where do you want to go?"
+                "</div>"
+                "</div>",
                 unsafe_allow_html=True,
             )
 
-        st.divider()
-        zone = st.selectbox("Where do you want to go?", ZONES)
+            zone = st.selectbox(" ", ZONES, label_visibility="collapsed")
 
-        if st.button("Walk to this zone"):
-            start_encounter(zone)
-            st.success(f"You walk over to {zone} and spot a potential deal.")
-            st.info("Switch to the 'Encounter' page to negotiate.")
+            if st.button("Walk to this zone"):
+                start_encounter(zone)
+                st.success(f"You walk over to {zone} and spot a potential deal.")
+                st.info("Switch to the 'Encounter' page to negotiate.")
+
+        with right_col:
+            st.markdown("### Zones")
+
+            for name in ZONES:
+                meta = ZONE_META[name]
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:0.6rem 0.9rem;
+                        margin-bottom:0.45rem;
+                        border-radius:0.7rem;
+                        border:1px solid #e0e0ff;
+                        background-color:#ffffff;">
+                        <span style="font-size:1.1rem; margin-right:0.4rem;">{meta['icon']}</span>
+                        <span style="font-weight:600;">{name}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 elif page == "Encounter":
     st.title("Encounter")
@@ -963,117 +973,4 @@ elif page == "Encounter":
                         "Trade Night": 0.05,
                     }.get(enc.zone, 0.0)
 
-                    buy_pct = max(0.4, min(0.9, base_buy_pct + mood_adj + zone_adj))
-                    offer_cash = round(total_true_sell * buy_pct, 2)
-
-                    enc.history.append(
-                        f"{enc.npc_type} offers ${offer_cash:.2f} for "
-                        f"{len(cards_to_sell)} of your card(s) "
-                        f"(est value ${total_true_sell:.2f})."
-                    )
-                    st.info(f"They offer you ${offer_cash:.2f} for your cards.")
-
-                    if st.button("Accept sale", key="confirm_sale"):
-                        for idx in sorted(sell_indices, reverse=True):
-                            p["collection"].pop(idx)
-
-                        p["cash"] += offer_cash
-                        margin = offer_cash - total_true_sell
-                        grant_xp_for_deal(enc.zone, margin, is_trade=False, is_sale=True)
-                        enc.history.append(
-                            f"You sell {len(cards_to_sell)} card(s) for ${offer_cash:.2f}."
-                        )
-
-            if walk and enc.active:
-                enc.history.append("You walk away from the table.")
-                enc.active = False
-                st.write("You leave this dealer and head back to the floor.")
-
-elif page == "Big Stages & Legends":
-    st.title("Big Stages & Legends")
-
-    if not p["build_locked"]:
-        st.warning("Head to 'Intro & Build' first to roll your collector build.")
-    else:
-        st.subheader("Major Tables (big deals)")
-
-        for gym in GYMS:
-            has = has_big_deal(gym["id"])
-            unlocked = p["level"] >= gym["required_level"]
-            status = "✅ Big deal done" if has else (
-                "🔓 Ready" if unlocked else f"🔒 Requires level {gym['required_level']}"
-            )
-            st.markdown(f"**{gym['name']}** – {gym['boss']}  |  {status}")
-            st.caption(gym["description"])
-            if unlocked and not has:
-                if st.button(f"Sit down with {gym['boss']}", key=f"stage_{gym['id']}"):
-                    start_stage_battle(gym["id"])
-                    st.success(f"You sit down at {gym['name']}! Go to the Encounter page.")
-
-        st.divider()
-        st.subheader("Influencer Battles")
-
-        for elite in ELITE_FOUR:
-            has = elite["id"] in p["elite_defeated"]
-            unlocked = p["level"] >= elite["required_level"] and len(p["badges"]) >= len(GYMS)
-            status = "✅ Out‑negotiated" if has else (
-                "🔓 Ready" if unlocked else f"🔒 Requires level {elite['required_level']} + all big deals"
-            )
-            st.markdown(f"**{elite['name']}** – {elite['boss']}  |  {status}")
-            st.caption(elite["description"])
-            if unlocked and not has:
-                if st.button(f"Go on stream with {elite['boss']}", key=f"influencer_{elite['id']}"):
-                    start_influencer_battle(elite["id"])
-                    st.success(f"You’re live with {elite['boss']}! Go to the Encounter page.")
-
-        st.divider()
-        st.subheader("The National Whale")
-
-        champ_unlocked = len(p["elite_defeated"]) >= len(ELITE_FOUR)
-        champ_done = p["champion_defeated"]
-        status = "✅ Deal done with the Whale" if champ_done else (
-            "🔓 Ready" if champ_unlocked else "🔒 Out‑negotiate all four influencers first"
-        )
-        st.markdown(f"**{CHAMPION['name']}** – {CHAMPION['boss']}  |  {status}")
-        st.caption(CHAMPION["description"])
-        if champ_unlocked and not champ_done:
-            if st.button("Approach the National Whale"):
-                start_whale_battle()
-                st.success("You approach the National Whale! Go to the Encounter page.")
-
-elif page == "Collection & Results":
-    st.title("Collection & Trip Results")
-
-    st.subheader("Collection")
-    if p["collection"]:
-        st.table(p["collection"])
-    else:
-        st.write("You haven't picked up any cards yet.")
-
-    st.divider()
-
-    st.subheader("Trip summary")
-    st.write(f"Trip profit (estimated): ${p['profit']:.2f}")
-    st.write(f"Level: {p['level']}  |  XP: {p['xp']}")
-    st.write(f"Negotiation skill: {p['negotiation_skill']:.1f}")
-    st.write(f"Big deals closed: {len(p['badges'])} / {len(GYMS)}")
-    st.write(f"Influencers out‑negotiated: {len(p['elite_defeated'])} / {len(ELITE_FOUR)}")
-    st.write(f"National Whale beaten: {'Yes' if p['champion_defeated'] else 'No'}")
-
-    hit_pc = any(
-        p["goals"]["target_pc_card"]
-        and p["goals"]["target_pc_card"].lower() in c["name"].lower()
-        for c in p["collection"]
-    )
-
-    if p["profit"] >= p["goals"]["profit_target"]:
-        st.success("You hit your profit target for the trip!")
-    else:
-        remaining = p["goals"]["profit_target"] - p["profit"]
-        st.info(f"You need ${remaining:.2f} more profit to hit your target.")
-
-    if p["goals"]["target_pc_card"]:
-        if hit_pc:
-            st.success("You found something that fits your PC goal. Story-worthy pickup achieved.")
-        else:
-            st.info("You might still be chasing that perfect PC card—but the hunt continues.")
+                    buy_pct = max(0.4, min(0.9, base_buy_pct + mood_a
