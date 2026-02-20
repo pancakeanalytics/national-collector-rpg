@@ -104,12 +104,12 @@ BUILD_SUMMARY = {
     ),
 }
 
-# ---------- Gyms / League ----------
+# ---------- Big stages / “gym” equivalents ----------
 
 GYMS = [
     {
         "id": "vintage_titan",
-        "name": "Vintage Titan Gym",
+        "name": "Vintage Titan Table",
         "boss": "Vintage Titan",
         "zone": "Vintage Alley",
         "required_level": 2,
@@ -117,7 +117,7 @@ GYMS = [
     },
     {
         "id": "chrome_master",
-        "name": "Modern Chrome Gym",
+        "name": "Chrome Master Showcase",
         "boss": "Chrome Master",
         "zone": "Modern Showcases",
         "required_level": 2,
@@ -125,7 +125,7 @@ GYMS = [
     },
     {
         "id": "dollar_box_duke",
-        "name": "Dollar Box Gym",
+        "name": "Dollar Box Gauntlet",
         "boss": "Dollar Box Duke",
         "zone": "Dollar Boxes",
         "required_level": 3,
@@ -133,7 +133,7 @@ GYMS = [
     },
     {
         "id": "trade_night_boss",
-        "name": "Trade Night Gym",
+        "name": "Trade Night Main Event",
         "boss": "Trade Night Boss",
         "zone": "Trade Night",
         "required_level": 3,
@@ -144,28 +144,28 @@ GYMS = [
 ELITE_FOUR = [
     {
         "id": "box_breaker",
-        "name": "Elite 1: Box Breaker",
+        "name": "Influencer 1: Box Breaker",
         "boss": "Box Breaker",
         "description": "A streamer who wants you to buy wax instead of singles—can you negotiate a fair rip?",
         "required_level": 4,
     },
     {
         "id": "content_flipper",
-        "name": "Elite 2: Content Flipper",
+        "name": "Influencer 2: Content Flipper",
         "boss": "Content Flipper",
         "description": "Lives by comps and thumbnails; can you get a real deal past the content?",
         "required_level": 5,
     },
     {
         "id": "analytics_nerd",
-        "name": "Elite 3: Analytics Nerd",
+        "name": "Influencer 3: Analytics Nerd",
         "boss": "Analytics Nerd",
         "description": "Charts, pop reports, and spreadsheets—your every move is being modeled.",
         "required_level": 6,
     },
     {
         "id": "show_vlogger",
-        "name": "Elite 4: Show Vlogger",
+        "name": "Influencer 4: Show Vlogger",
         "boss": "Show Vlogger",
         "description": "Cares about the story of the deal more than the margin; style matters.",
         "required_level": 7,
@@ -174,9 +174,9 @@ ELITE_FOUR = [
 
 CHAMPION = {
     "id": "national_whale",
-    "name": "The National Champion",
+    "name": "The National Whale",
     "boss": "The National Whale",
-    "description": "The ultimate super collector with impossible showcases and zero tolerance for weak deals.",
+    "description": "The biggest buyer in the room with impossible showcases and zero tolerance for weak deals.",
     "required_level": 8,
 }
 
@@ -191,7 +191,7 @@ def base_player_state():
         "stamina": 100,
         "negotiation_skill": 1.0,
         "day": 1,
-        "time_block": "Morning",   # flavor only
+        "time_block": "Morning",
         "xp": 0,
         "level": 1,
         "goals": {
@@ -201,8 +201,8 @@ def base_player_state():
         "collection": [],
         "profit": 0.0,
         "build_locked": False,
-        "badges": [],
-        "elite_defeated": [],
+        "badges": [],           # “big deals closed” at special tables
+        "elite_defeated": [],   # influencers out-negotiated
         "champion_defeated": False,
     }
 
@@ -325,30 +325,30 @@ def start_encounter(zone: str):
     st.session_state.encounter = enc
 
 
-def has_badge(gym_id: str) -> bool:
-    return gym_id in st.session_state.player["badges"]
+def has_big_deal(stage_id: str) -> bool:
+    return stage_id in st.session_state.player["badges"]
 
 
-def mark_gym_won(gym_id: str):
-    if gym_id not in st.session_state.player["badges"]:
-        st.session_state.player["badges"].append(gym_id)
+def mark_big_deal(stage_id: str):
+    if stage_id not in st.session_state.player["badges"]:
+        st.session_state.player["badges"].append(stage_id)
         add_xp(50)
 
 
-def mark_elite_won(elite_id: str):
-    if elite_id not in st.session_state.player["elite_defeated"]:
-        st.session_state.player["elite_defeated"].append(elite_id)
+def mark_influencer_won(influencer_id: str):
+    if influencer_id not in st.session_state.player["elite_defeated"]:
+        st.session_state.player["elite_defeated"].append(influencer_id)
         add_xp(75)
 
 
-def mark_champion_won():
+def mark_whale_won():
     if not st.session_state.player["champion_defeated"]:
         st.session_state.player["champion_defeated"] = True
         add_xp(100)
 
 
-def start_gym_battle(gym_id: str):
-    gym = next(g for g in GYMS if g["id"] == gym_id)
+def start_stage_battle(stage_id: str):
+    gym = next(g for g in GYMS if g["id"] == stage_id)
     npc_type = "PC Supercollector"
     mood = random.choice(MOODS)
     zone = gym["zone"]
@@ -365,15 +365,15 @@ def start_gym_battle(gym_id: str):
         cards=cards,
         round=1,
         active=True,
-        history=[f"You challenge the {gym['boss']} at the {gym['name']}!"],
+        history=[f"You sit down at the {gym['name']} with {gym['boss']}."],
     )
     init_encounter_state(enc, tough_multiplier=1.3)
-    enc.mode = f"gym:{gym_id}"
+    enc.mode = f"stage:{stage_id}"
     st.session_state.encounter = enc
 
 
-def start_elite_battle(elite_id: str):
-    elite = next(e for e in ELITE_FOUR if e["id"] == elite_id)
+def start_influencer_battle(influencer_id: str):
+    elite = next(e for e in ELITE_FOUR if e["id"] == influencer_id)
     npc_type = "Dealer"
     mood = "neutral"
     zone = "Modern Showcases"
@@ -389,14 +389,14 @@ def start_elite_battle(elite_id: str):
         cards=cards,
         round=1,
         active=True,
-        history=[f"You face {elite['boss']} – {elite['name']}!"],
+        history=[f"You’re on camera with {elite['boss']} ({elite['name']})."],
     )
     init_encounter_state(enc, tough_multiplier=1.6)
-    enc.mode = f"elite:{elite_id}"
+    enc.mode = f"influencer:{influencer_id}"
     st.session_state.encounter = enc
 
 
-def start_champion_battle():
+def start_whale_battle():
     champ = CHAMPION
     npc_type = "PC Supercollector"
     mood = "neutral"
@@ -413,10 +413,10 @@ def start_champion_battle():
         cards=cards,
         round=1,
         active=True,
-        history=[f"You approach {champ['boss']} – the {champ['name']}!"],
+        history=[f"You approach {champ['boss']} – the biggest buyer in the room."],
     )
     init_encounter_state(enc, tough_multiplier=2.0)
-    enc.mode = "champion"
+    enc.mode = "whale"
     st.session_state.encounter = enc
 
 
@@ -478,30 +478,20 @@ def finalize_deal(price_paid: float):
     mode = getattr(enc, "mode", None)
     if mode and margin >= 0:
         kind, ident = mode.split(":", 1) if ":" in mode else (mode, "")
-        if kind == "gym":
-            mark_gym_won(ident)
-        elif kind == "elite":
-            mark_elite_won(ident)
-        elif kind == "champion":
-            mark_champion_won()
-
-
-def pick_trade_card():
-    coll = st.session_state.player["collection"]
-    if not coll:
-        return None
-    return random.choice(coll)
+        if kind == "stage":
+            mark_big_deal(ident)
+        elif kind == "influencer":
+            mark_influencer_won(ident)
+        elif kind == "whale":
+            mark_whale_won()
 
 
 def compute_collection_value(card_dicts):
     return sum(c.get("true_value", 0) for c in card_dicts)
 
 
-# ---------- Negotiation moves ----------
-
 def apply_move(move: str):
     enc = st.session_state.encounter
-    p = st.session_state.player
     npc = enc.npc_type
 
     hp_delta = 0
@@ -578,7 +568,7 @@ p = st.session_state.player
 
 st.sidebar.title("Trip Status")
 st.sidebar.write(f"Collector: {p['name'] or '—'}")
-st.sidebar.write(f"Archetype: {p['archetype'] or '—'}")
+st.sidebar.write(f"Build: {p['archetype'] or '—'}")
 st.sidebar.write(f"Day (chapter): {p['day']}")
 st.sidebar.write(f"Time (flavor): {p['time_block']}")
 st.sidebar.write(f"Level: {p['level']}  |  XP: {p['xp']}")
@@ -589,21 +579,20 @@ st.sidebar.markdown("**Goals**")
 st.sidebar.write(f"Target PC: {p['goals']['target_pc_card'] or '—'}")
 st.sidebar.write(f"Profit target: ${p['goals']['profit_target']:.2f}")
 st.sidebar.write(f"Trip profit: ${p['profit']:.2f}")
-st.sidebar.markdown("**Badges**")
-st.sidebar.write(f"{len(p['badges'])} gym badges")
-st.sidebar.write(f"{len(p['elite_defeated'])}/4 Elite defeated")
-st.sidebar.write("Champion: ✅" if p["champion_defeated"] else "Champion: ❌")
+st.sidebar.markdown("**Milestones**")
+st.sidebar.write(f"Big deals closed: {len(p['badges'])}")
+st.sidebar.write(f"Influencers out‑negotiated: {len(p['elite_defeated'])}/4")
+st.sidebar.write("National Whale beaten: ✅" if p["champion_defeated"] else "National Whale beaten: ❌")
 
 page = st.sidebar.radio(
     "Go to",
-    ["Intro & Build", "Show Floor", "Encounter", "League", "Collection & Results"],
+    ["Intro & Build", "Show Floor", "Encounter", "Big Stages & Legends", "Collection & Results"],
 )
 
 # ---------- Pages ----------
 
 if page == "Intro & Build":
     st.title("Intro & Build")
-    st.write("Enter who you are, then let fate deal you a collector build for this National.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -616,7 +605,7 @@ if page == "Intro & Build":
         value=p["goals"]["target_pc_card"],
     )
 
-    st.write("When you start the trip, the game will randomly assign you a collector archetype with perks and flaws.")
+    st.write("When you start the trip, the game will randomly assign you a collector build with perks and flaws.")
 
     if st.button("Start trip / roll build", disabled=p["build_locked"] and p["archetype"]):
         p["name"] = name or "Unnamed Collector"
@@ -693,7 +682,7 @@ elif page == "Encounter":
     if not p["build_locked"]:
         st.warning("Head to 'Intro & Build' first to roll your collector build.")
     elif enc is None or not enc.active:
-        st.write("No active encounter. Head to the Show Floor or League to find a deal.")
+        st.write("No active encounter. Head to the Show Floor or Big Stages to find a deal.")
     else:
         zone_meta = ZONE_META.get(enc.zone, {"icon": "🎪"})
         npc_meta = NPC_META.get(enc.npc_type, {"icon": "🙂"})
@@ -798,7 +787,7 @@ elif page == "Encounter":
                         elif enc.mood == "neutral":
                             enc.mood = "grumpy"
 
-            # --- Trade offer section: choose their cards + your cards + cash ---
+            # Trade offer: choose your cards + their cards + cash
             st.markdown("##### Trade offer (cards + cash)")
 
             collection = p["collection"]
@@ -857,13 +846,10 @@ elif page == "Encounter":
 
                     if offered_value >= target_value * 0.9:
                         st.success("They like the trade and accept!")
-                        # Remove offered cards from your collection
                         for idx in sorted(selected_indices, reverse=True):
                             p["collection"].pop(idx)
-                        # Add their cards to your collection
                         for c in wanted_cards:
                             p["collection"].append(asdict(c))
-                        # Remove those cards from encounter's lot (they give them to you)
                         for idx in sorted(target_indices, reverse=True):
                             enc.cards.pop(idx)
                         p["cash"] -= trade_cash
@@ -892,54 +878,57 @@ elif page == "Encounter":
                 enc.active = False
                 st.write("You leave this dealer and head back to the floor.")
 
-elif page == "League":
-    st.title("League – Gyms & Badges")
+elif page == "Big Stages & Legends":
+    st.title("Big Stages & Legends")
 
     if not p["build_locked"]:
         st.warning("Head to 'Intro & Build' first to roll your collector build.")
     else:
-        st.subheader("Gyms")
+        st.subheader("Major Tables (big deals)")
+
         for gym in GYMS:
-            has = has_badge(gym["id"])
+            has = has_big_deal(gym["id"])
             unlocked = p["level"] >= gym["required_level"]
-            status = "✅ Badge earned" if has else (
+            status = "✅ Big deal done" if has else (
                 "🔓 Ready" if unlocked else f"🔒 Requires level {gym['required_level']}"
             )
             st.markdown(f"**{gym['name']}** – {gym['boss']}  |  {status}")
             st.caption(gym["description"])
             if unlocked and not has:
-                if st.button(f"Challenge {gym['boss']}", key=f"gym_{gym['id']}"):
-                    start_gym_battle(gym["id"])
-                    st.success(f"You challenged {gym['boss']}! Go to the Encounter page.")
-        st.divider()
+                if st.button(f"Sit down with {gym['boss']}", key=f"stage_{gym['id']}"):
+                    start_stage_battle(gym["id"])
+                    st.success(f"You sit down at {gym['name']}! Go to the Encounter page.")
 
-        st.subheader("Elite Four")
+        st.divider()
+        st.subheader("Influencer Battles")
+
         for elite in ELITE_FOUR:
             has = elite["id"] in p["elite_defeated"]
             unlocked = p["level"] >= elite["required_level"] and len(p["badges"]) >= len(GYMS)
-            status = "✅ Defeated" if has else (
-                "🔓 Ready" if unlocked else f"🔒 Requires level {elite['required_level']} + all gym badges"
+            status = "✅ Out‑negotiated" if has else (
+                "🔓 Ready" if unlocked else f"🔒 Requires level {elite['required_level']} + all big deals"
             )
             st.markdown(f"**{elite['name']}** – {elite['boss']}  |  {status}")
             st.caption(elite["description"])
             if unlocked and not has:
-                if st.button(f"Face {elite['boss']}", key=f"elite_{elite['id']}"):
-                    start_elite_battle(elite["id"])
-                    st.success(f"You face {elite['boss']}! Go to the Encounter page.")
-        st.divider()
+                if st.button(f"Go on stream with {elite['boss']}", key=f"influencer_{elite['id']}"):
+                    start_influencer_battle(elite["id"])
+                    st.success(f"You’re live with {elite['boss']}! Go to the Encounter page.")
 
-        st.subheader("Champion")
+        st.divider()
+        st.subheader("The National Whale")
+
         champ_unlocked = len(p["elite_defeated"]) >= len(ELITE_FOUR)
         champ_done = p["champion_defeated"]
-        status = "✅ Champion defeated" if champ_done else (
-            "🔓 Ready" if champ_unlocked else "🔒 Defeat the Elite Four first"
+        status = "✅ Deal done with the Whale" if champ_done else (
+            "🔓 Ready" if champ_unlocked else "🔒 Out‑negotiate all four influencers first"
         )
         st.markdown(f"**{CHAMPION['name']}** – {CHAMPION['boss']}  |  {status}")
         st.caption(CHAMPION["description"])
         if champ_unlocked and not champ_done:
-            if st.button("Challenge the Champion"):
-                start_champion_battle()
-                st.success("You challenge the National Champion! Go to the Encounter page.")
+            if st.button("Approach the National Whale"):
+                start_whale_battle()
+                st.success("You approach the National Whale! Go to the Encounter page.")
 
 elif page == "Collection & Results":
     st.title("Collection & Trip Results")
@@ -956,9 +945,9 @@ elif page == "Collection & Results":
     st.write(f"Trip profit (estimated): ${p['profit']:.2f}")
     st.write(f"Level: {p['level']}  |  XP: {p['xp']}")
     st.write(f"Negotiation skill: {p['negotiation_skill']:.1f}")
-    st.write(f"Gym badges: {len(p['badges'])} / {len(GYMS)}")
-    st.write(f"Elite defeated: {len(p['elite_defeated'])} / {len(ELITE_FOUR)}")
-    st.write(f"Champion defeated: {'Yes' if p['champion_defeated'] else 'No'}")
+    st.write(f"Big deals closed: {len(p['badges'])} / {len(GYMS)}")
+    st.write(f"Influencers out‑negotiated: {len(p['elite_defeated'])} / {len(ELITE_FOUR)}")
+    st.write(f"National Whale beaten: {'Yes' if p['champion_defeated'] else 'No'}")
 
     hit_pc = any(
         p["goals"]["target_pc_card"]
