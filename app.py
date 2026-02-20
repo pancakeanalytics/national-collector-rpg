@@ -654,6 +654,7 @@ elif page == "Show Floor":
     if not p["build_locked"]:
         st.warning("Head to 'Intro & Build' first to roll your collector build.")
     else:
+        st.image("002_image.png", use_column_width=True)
         st.write("Choose where to head next at The National.")
 
         st.markdown("#### Zones")
