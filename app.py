@@ -264,6 +264,33 @@ def add_xp(amount: int):
         advance_flavor_time()
 
 
+def grant_xp_for_deal(zone: str, margin: float, is_trade: bool, is_sale: bool = False):
+    """
+    XP based on zone, how good the deal was (margin), and whether it was a trade or sale.
+    margin > 0 means you came out ahead; margin < 0 means you overpaid / sold low.
+    """
+    base = 5  # floor XP each meaningful interaction
+
+    zone_factor = {
+        "Dollar Boxes": 0.8,
+        "Vintage Alley": 1.3,
+        "Modern Showcases": 1.1,
+        "Corporate Pavilion": 1.0,
+        "Trade Night": 1.2,
+    }.get(zone, 1.0)
+
+    margin_xp = max(0.0, margin / 20.0)
+    margin_xp = min(margin_xp, 40.0)
+
+    trade_bonus = 1.3 if is_trade else 1.0
+    if is_sale:
+        trade_bonus = 0.9
+
+    total_xp = int((base + margin_xp) * zone_factor * trade_bonus)
+    if total_xp > 0:
+        add_xp(total_xp)
+
+
 def generate_cards_for_zone(zone: str, npc_type: str) -> List[Card]:
     base_cards = []
     if zone == "Vintage Alley":
@@ -472,8 +499,7 @@ def finalize_deal(price_paid: float):
     )
 
     margin = total_true - price_paid
-    xp_gain = max(5, int(margin / 20))
-    add_xp(xp_gain)
+    grant_xp_for_deal(enc.zone, margin, is_trade=False, is_sale=False)
 
     mode = getattr(enc, "mode", None)
     if mode and margin >= 0:
@@ -591,7 +617,6 @@ else:
 
 page = st.sidebar.radio("Go to", page_options)
 
-# Force Intro until build is locked
 if not p["build_locked"]:
     page = "Intro & Build"
 
@@ -878,8 +903,10 @@ elif page == "Encounter":
                         for idx in sorted(target_indices, reverse=True):
                             enc.cards.pop(idx)
                         p["cash"] -= trade_cash
+
+                        margin = target_value - offered_value
+                        grant_xp_for_deal(enc.zone, margin, is_trade=True, is_sale=False)
                         enc.active = False
-                        add_xp(20)
                     elif offered_value >= target_value * 0.7:
                         st.info("They think about it and counter higher.")
                         enc.history.append(
@@ -897,6 +924,65 @@ elif page == "Encounter":
                         if enc.patience <= 0:
                             enc.active = False
                             enc.history.append(f"{enc.npc_type} has had enough and walks away.")
+
+            st.markdown("### Sell to this dealer")
+
+            if collection:
+                sell_labels = [
+                    f"{i}. {c['name']} ({c['set_name']} {c['year']}) – est ${c['true_value']:.2f}"
+                    for i, c in enumerate(collection)
+                ]
+                sell_indices = st.multiselect(
+                    "Cards you want to sell",
+                    options=list(range(len(collection))),
+                    format_func=lambda i: sell_labels[i],
+                    key="sell_cards",
+                )
+            else:
+                sell_indices = []
+
+            sell_btn = st.button("Get cash offer for selected")
+
+            if sell_btn and enc.active:
+                if not sell_indices:
+                    st.warning("Pick at least one card to get an offer.")
+                else:
+                    cards_to_sell = [collection[i] for i in sell_indices]
+                    total_true_sell = sum(c["true_value"] for c in cards_to_sell)
+
+                    base_buy_pct = {
+                        "Dealer": 0.65,
+                        "Flipper": 0.6,
+                        "Kid Collector": 0.7,
+                        "PC Supercollector": 0.75,
+                    }.get(enc.npc_type, 0.65)
+
+                    mood_adj = {"happy": 0.05, "neutral": 0.0, "grumpy": -0.05}[enc.mood]
+                    zone_adj = {
+                        "Dollar Boxes": -0.05,
+                        "Trade Night": 0.05,
+                    }.get(enc.zone, 0.0)
+
+                    buy_pct = max(0.4, min(0.9, base_buy_pct + mood_adj + zone_adj))
+                    offer_cash = round(total_true_sell * buy_pct, 2)
+
+                    enc.history.append(
+                        f"{enc.npc_type} offers ${offer_cash:.2f} for "
+                        f"{len(cards_to_sell)} of your card(s) "
+                        f"(est value ${total_true_sell:.2f})."
+                    )
+                    st.info(f"They offer you ${offer_cash:.2f} for your cards.")
+
+                    if st.button("Accept sale", key="confirm_sale"):
+                        for idx in sorted(sell_indices, reverse=True):
+                            p["collection"].pop(idx)
+
+                        p["cash"] += offer_cash
+                        margin = offer_cash - total_true_sell
+                        grant_xp_for_deal(enc.zone, margin, is_trade=False, is_sale=True)
+                        enc.history.append(
+                            f"You sell {len(cards_to_sell)} card(s) for ${offer_cash:.2f}."
+                        )
 
             if walk and enc.active:
                 enc.history.append("You walk away from the table.")
