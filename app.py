@@ -594,7 +594,7 @@ page = st.sidebar.radio(
 if page == "Intro & Build":
     st.title("National Collector RPG")
 
-    st.image("images/001_image.png", use_column_width=True)
+    st.image("001_image.png", use_column_width=True)
     st.markdown(
         "<p style='margin-top:0.3rem; color:#555;'>Turn your National trip into a story told in cardboard.</p>",
         unsafe_allow_html=True,
