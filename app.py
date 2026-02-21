@@ -184,14 +184,12 @@ def base_player_state():
         "badges": [],
         "elite_defeated": [],
         "champion_defeated": False,
-        # Core attributes
         "attributes": {
             "Negotiation": 50,
             "People Skills": 50,
             "Card Knowledge": 50,
             "Hustle": 50,
         },
-        # Sport / subject lanes
         "subjects": {
             "Vintage Baseball": 0,
             "Vintage Football": 0,
@@ -478,7 +476,6 @@ def evaluate_offer(offer: float) -> str:
     behavior = NPC_BEHAVIOR.get(enc.npc_type, {"min_pct": 0.85})
     base_min_pct = behavior["min_pct"]
 
-    # NPC affinities based on subjects
     zone_subj = subject_score_for_zone(enc.zone, subjects)
     if enc.npc_type == "PC Supercollector":
         base_min_pct -= 0.03 * zone_subj
@@ -672,96 +669,99 @@ if not p["build_locked"]:
 if page == "Intro & Build":
     st.title("National Collector RPG")
 
-    st.image("001_image.png", use_column_width=True)
-    st.markdown(
-        "<p style='margin-top:0.3rem; color:#555;'>Create your collector build, then take it onto the show floor.</p>",
-        unsafe_allow_html=True,
-    )
+    # New layout: image left, all controls right
+    left_col, right_col = st.columns([3, 2], gap="large")
 
-    st.subheader("Collector profile")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        p["name"] = st.text_input("Collector name", value=p["name"])
-    with col2:
-        p["favorite"] = st.text_input("Favorite player or team", value=p["favorite"])
-
-    p["goals"]["target_pc_card"] = st.text_input(
-        "Describe your dream PC pickup for this trip",
-        value=p["goals"]["target_pc_card"],
-    )
-
-    st.divider()
-    st.subheader("Core attributes (0–100)")
-
-    attrs = p["attributes"]
-    attr_budget = 250
-    current_attr_total = sum(attrs.values())
-    attr_remaining = attr_budget - current_attr_total
-    st.markdown(f"**Points to allocate:** {attr_remaining} (budget {attr_budget})")
-
-    a1, a2 = st.columns(2)
-    with a1:
-        attrs["Negotiation"] = st.slider("Negotiation", 0, 100, attrs["Negotiation"])
-        attrs["Card Knowledge"] = st.slider("Card Knowledge", 0, 100, attrs["Card Knowledge"])
-    with a2:
-        attrs["People Skills"] = st.slider("People Skills", 0, 100, attrs["People Skills"])
-        attrs["Hustle"] = st.slider("Hustle", 0, 100, attrs["Hustle"])
-
-    current_attr_total = sum(attrs.values())
-    attr_remaining = attr_budget - current_attr_total
-
-    st.divider()
-    st.subheader("Subject lanes (0–100 per lane)")
-
-    subj = p["subjects"]
-    subj_budget = 300
-    current_subj_total = sum(subj.values())
-    subj_remaining = subj_budget - current_subj_total
-    st.markdown(f"**Subject points left:** {subj_remaining} (budget {subj_budget})")
-
-    s1, s2 = st.columns(2)
-    with s1:
-        subj["Vintage Baseball"] = st.slider("Vintage Baseball", 0, 100, subj["Vintage Baseball"])
-        subj["Vintage Basketball"] = st.slider("Vintage Basketball", 0, 100, subj["Vintage Basketball"])
-        subj["Modern Baseball"] = st.slider("Modern Baseball", 0, 100, subj["Modern Baseball"])
-        subj["Modern Basketball"] = st.slider("Modern Basketball", 0, 100, subj["Modern Basketball"])
-        subj["Soccer"] = st.slider("Soccer", 0, 100, subj["Soccer"])
-    with s2:
-        subj["Vintage Football"] = st.slider("Vintage Football", 0, 100, subj["Vintage Football"])
-        subj["Vintage Hockey"] = st.slider("Vintage Hockey", 0, 100, subj["Vintage Hockey"])
-        subj["Modern Football"] = st.slider("Modern Football", 0, 100, subj["Modern Football"])
-        subj["Modern Hockey"] = st.slider("Modern Hockey", 0, 100, subj["Modern Hockey"])
-        subj["Other / TCG / Non‑sport"] = st.slider(
-            "Other / TCG / Non‑sport", 0, 100, subj["Other / TCG / Non‑sport"]
+    with left_col:
+        st.image("001_image.png", use_column_width=True)
+        st.markdown(
+            "<p style='margin-top:0.5rem; color:#555;'>Create your collector build, then take it onto the show floor.</p>",
+            unsafe_allow_html=True,
         )
 
-    current_subj_total = sum(subj.values())
-    subj_remaining = subj_budget - current_subj_total
+    with right_col:
+        st.subheader("Collector profile")
 
-    if attr_remaining < 0 or subj_remaining < 0:
-        st.error("You spent more than your budget. Lower at least one slider.")
-    elif attr_remaining > 0 or subj_remaining > 0:
-        st.info("You still have unspent points. Use the sliders to allocate them.")
-    else:
-        st.success("All points allocated. You can start your trip when ready.")
+        col1, col2 = st.columns(2)
+        with col1:
+            p["name"] = st.text_input("Collector name", value=p["name"])
+        with col2:
+            p["favorite"] = st.text_input("Favorite player or team", value=p["favorite"])
 
-    st.divider()
-    st.subheader("Trip settings")
+        p["goals"]["target_pc_card"] = st.text_input(
+            "Describe your dream PC pickup for this trip",
+            value=p["goals"]["target_pc_card"],
+        )
 
-    p["goals"]["profit_target"] = st.number_input(
-        "Profit target for the trip",
-        0.0, 10000.0, float(p["goals"]["profit_target"]), step=50.0,
-    )
-    p["cash"] = st.number_input(
-        "Starting cash",
-        100.0, 10000.0, float(p["cash"]), step=100.0,
-    )
+        st.markdown("---")
+        st.markdown("### Core attributes (0–100)")
 
-    start_disabled = attr_remaining != 0 or subj_remaining != 0 or not p["name"]
-    if st.button("Lock in build and start trip", disabled=start_disabled):
-        p["build_locked"] = True
-        st.success("Build locked! Head to the Show Floor to start making deals.")
+        attrs = p["attributes"]
+        attr_budget = 250
+        current_attr_total = sum(attrs.values())
+        attr_remaining = attr_budget - current_attr_total
+        st.caption(f"Points to allocate: {attr_remaining} (budget {attr_budget})")
+
+        a1, a2 = st.columns(2)
+        with a1:
+            attrs["Negotiation"] = st.slider("Negotiation", 0, 100, attrs["Negotiation"])
+            attrs["Card Knowledge"] = st.slider("Card Knowledge", 0, 100, attrs["Card Knowledge"])
+        with a2:
+            attrs["People Skills"] = st.slider("People Skills", 0, 100, attrs["People Skills"])
+            attrs["Hustle"] = st.slider("Hustle", 0, 100, attrs["Hustle"])
+
+        current_attr_total = sum(attrs.values())
+        attr_remaining = attr_budget - current_attr_total
+
+        st.markdown("### Subject lanes (0–100 per lane)")
+
+        subj = p["subjects"]
+        subj_budget = 300
+        current_subj_total = sum(subj.values())
+        subj_remaining = subj_budget - current_subj_total
+        st.caption(f"Subject points left: {subj_remaining} (budget {subj_budget})")
+
+        s1, s2 = st.columns(2)
+        with s1:
+            subj["Vintage Baseball"] = st.slider("Vintage Baseball", 0, 100, subj["Vintage Baseball"])
+            subj["Vintage Basketball"] = st.slider("Vintage Basketball", 0, 100, subj["Vintage Basketball"])
+            subj["Modern Baseball"] = st.slider("Modern Baseball", 0, 100, subj["Modern Baseball"])
+            subj["Modern Basketball"] = st.slider("Modern Basketball", 0, 100, subj["Modern Basketball"])
+            subj["Soccer"] = st.slider("Soccer", 0, 100, subj["Soccer"])
+        with s2:
+            subj["Vintage Football"] = st.slider("Vintage Football", 0, 100, subj["Vintage Football"])
+            subj["Vintage Hockey"] = st.slider("Vintage Hockey", 0, 100, subj["Vintage Hockey"])
+            subj["Modern Football"] = st.slider("Modern Football", 0, 100, subj["Modern Football"])
+            subj["Modern Hockey"] = st.slider("Modern Hockey", 0, 100, subj["Modern Hockey"])
+            subj["Other / TCG / Non‑sport"] = st.slider(
+                "Other / TCG / Non‑sport", 0, 100, subj["Other / TCG / Non‑sport"]
+            )
+
+        current_subj_total = sum(subj.values())
+        subj_remaining = subj_budget - current_subj_total
+
+        if attr_remaining < 0 or subj_remaining < 0:
+            st.error("You spent more than your budget. Lower at least one slider.")
+        elif attr_remaining > 0 or subj_remaining > 0:
+            st.info("You still have unspent points. Use the sliders to allocate them.")
+        else:
+            st.success("All points allocated. You can start your trip when ready.")
+
+        st.markdown("### Trip settings")
+
+        p["goals"]["profit_target"] = st.number_input(
+            "Profit target for the trip",
+            0.0, 10000.0, float(p["goals"]["profit_target"]), step=50.0,
+        )
+        p["cash"] = st.number_input(
+            "Starting cash",
+            100.0, 10000.0, float(p["cash"]), step=100.0,
+        )
+
+        start_disabled = attr_remaining != 0 or subj_remaining != 0 or not p["name"]
+        if st.button("Lock in build and start trip", disabled=start_disabled):
+            p["build_locked"] = True
+            st.success("Build locked! Head to the Show Floor to start making deals.")
 
 elif page == "Show Floor":
     st.title("Show Floor")
