@@ -244,6 +244,15 @@ def advance_flavor_time():
         p["day"] += 1
 
 
+def compute_action_budget(player: dict) -> int:
+    """Number of tactical actions allowed in an encounter."""
+    lvl = player["level"]
+    attrs = player["attributes"]
+    avg_attr = (attrs["Negotiation"] + attrs["People Skills"] +
+                attrs["Card Knowledge"] + attrs["Hustle"]) / 4.0
+    return int(4 + lvl // 2 + avg_attr / 40)  # base 4, +level, +up to ~+3 from stats
+
+
 def add_xp(amount: int):
     p = st.session_state.player
     old_level = p["level"]
@@ -389,6 +398,11 @@ def init_encounter_state(enc: Encounter, tough_multiplier: float = 1.0):
     enc.price_factor = 1.0 * tough_multiplier
     enc.patience = 5 + int(2 * tough_multiplier)
 
+    # per-encounter action meta
+    enc.pancake_used = False
+    enc.actions_used = 0
+    enc.max_actions = 999  # will be set when encounter starts
+
 
 def start_encounter(zone: str):
     npc_type = random.choice(NPC_TYPES)
@@ -404,6 +418,7 @@ def start_encounter(zone: str):
         history=[f"You approach a {npc_type} in {zone}. They seem {mood}."],
     )
     init_encounter_state(enc)
+    enc.max_actions = compute_action_budget(st.session_state.player)
     st.session_state.encounter = enc
 
 
@@ -450,6 +465,7 @@ def start_stage_battle(stage_id: str):
         history=[f"You sit down at the {gym['name']} with {gym['boss']}."],
     )
     init_encounter_state(enc, tough_multiplier=1.3)
+    enc.max_actions = compute_action_budget(st.session_state.player)
     enc.mode = f"stage:{stage_id}"
     st.session_state.encounter = enc
 
@@ -474,6 +490,7 @@ def start_influencer_battle(influencer_id: str):
         history=[f"You’re on camera with {elite['boss']} ({elite['name']})."],
     )
     init_encounter_state(enc, tough_multiplier=1.6)
+    enc.max_actions = compute_action_budget(st.session_state.player)
     enc.mode = f"influencer:{influencer_id}"
     st.session_state.encounter = enc
 
@@ -498,6 +515,7 @@ def start_whale_battle():
         history=[f"You approach {champ['boss']} – the biggest buyer in the room."],
     )
     init_encounter_state(enc, tough_multiplier=2.0)
+    enc.max_actions = compute_action_budget(st.session_state.player)
     enc.mode = "whale"
     st.session_state.encounter = enc
 
@@ -1008,6 +1026,14 @@ elif page == "Encounter":
         with right_col:
             st.markdown("### Your moves")
 
+            remaining_actions = max(0, enc.max_actions - enc.actions_used)
+            st.caption(f"Encounter actions left: {remaining_actions}")
+            st.markdown(
+                f"- Core moves left (chat / flaws / probe / comps): **{remaining_actions}**\n"
+                f"- Pancake Analytics uses left: **{0 if enc.pancake_used else 1}**\n"
+                f"- Special tactics uses left: **{remaining_actions}**"
+            )
+
             # Card selector for Pancake Analytics
             pancake_idx = st.selectbox(
                 "Card to consult Pancake Analytics on",
@@ -1036,26 +1062,38 @@ elif page == "Encounter":
             make_offer = b_row2[1].button("Make offer")
             walk = b_row2[2].button("Walk away")
 
-            if friendly:
+            # Core moves: consume actions
+            if friendly and enc.actions_used < enc.max_actions:
                 apply_move("friendly_chat")
-            if flaws:
+                enc.actions_used += 1
+            if flaws and enc.actions_used < enc.max_actions:
                 apply_move("point_flaws")
-            if lowball:
+                enc.actions_used += 1
+            if lowball and enc.actions_used < enc.max_actions:
                 apply_move("lowball_probe")
-            if comps:
+                enc.actions_used += 1
+            if comps and enc.actions_used < enc.max_actions:
                 apply_move("show_comp")
+                enc.actions_used += 1
 
-            # Pancake Analytics: reveal true price for selected card
+            # Pancake Analytics: only once per encounter, costs an action
             if pancake_btn:
-                target = enc.cards[pancake_idx]
-                enc.history.append(
-                    f"You quietly consult Pancake Analytics on {target.name} "
-                    f"({target.set_name} {target.year}). True value comes back at ${target.true_value:.2f}."
-                )
-                st.info(
-                    f"Pancake Analytics estimate for {target.name} is "
-                    f"${target.true_value:.2f} (ask is ${target.ask_price:.2f})."
-                )
+                if enc.pancake_used:
+                    st.warning("You already consulted Pancake Analytics on this encounter.")
+                elif enc.actions_used >= enc.max_actions:
+                    st.warning("You’ve used all your encounter actions.")
+                else:
+                    target = enc.cards[pancake_idx]
+                    enc.history.append(
+                        f"You quietly consult Pancake Analytics on {target.name} "
+                        f"({target.set_name} {target.year}). True value comes back at ${target.true_value:.2f}."
+                    )
+                    st.info(
+                        f"Pancake Analytics estimate for {target.name} is "
+                        f"${target.true_value:.2f} (ask is ${target.ask_price:.2f})."
+                    )
+                    enc.pancake_used = True
+                    enc.actions_used += 1
 
             # Special tactics unlocked by leveling
             if p["unlocked_tactics"]:
@@ -1071,32 +1109,36 @@ elif page == "Encounter":
                 use_tactic = st.button("Use special tactic")
 
                 if use_tactic and chosen != "(None)" and enc.active:
-                    t = next(t for t in p["unlocked_tactics"] if t["name"] == chosen)
-                    origin = t["from_attr"]
+                    if enc.actions_used >= enc.max_actions:
+                        st.warning("You’ve used all your encounter actions.")
+                    else:
+                        t = next(t for t in p["unlocked_tactics"] if t["name"] == chosen)
+                        origin = t["from_attr"]
 
-                    if origin == "Negotiation":
-                        enc.npc_hp = max(0, enc.npc_hp - 20)
-                        enc.history.append(
-                            f"You use {t['name']} and the dealer suddenly rethinks their anchor price."
-                        )
-                    elif origin == "People Skills":
-                        enc.mood = "happy"
-                        enc.history.append(
-                            f"You use {t['name']} and the table energy shifts in your favor."
-                        )
-                    elif origin == "Card Knowledge":
-                        enc.price_factor = max(0.75, enc.price_factor - 0.1)
-                        enc.history.append(
-                            f"You use {t['name']} and your detailed knowledge softens their pricing."
-                        )
-                    elif origin == "Hustle":
-                        old_visible = p.get("max_cards_visible", 2)
-                        p["max_cards_visible"] = min(6, old_visible + 1)
-                        enc.history.append(
-                            f"You use {t['name']} and quickly scan more of the case for hidden value."
-                        )
+                        if origin == "Negotiation":
+                            enc.npc_hp = max(0, enc.npc_hp - 20)
+                            enc.history.append(
+                                f"You use {t['name']} and the dealer suddenly rethinks their anchor price."
+                            )
+                        elif origin == "People Skills":
+                            enc.mood = "happy"
+                            enc.history.append(
+                                f"You use {t['name']} and the table energy shifts in your favor."
+                            )
+                        elif origin == "Card Knowledge":
+                            enc.price_factor = max(0.75, enc.price_factor - 0.1)
+                            enc.history.append(
+                                f"You use {t['name']} and your detailed knowledge softens their pricing."
+                            )
+                        elif origin == "Hustle":
+                            old_visible = p.get("max_cards_visible", 2)
+                            p["max_cards_visible"] = min(6, old_visible + 1)
+                            enc.history.append(
+                                f"You use {t['name']} and quickly scan more of the case for hidden value."
+                            )
 
-                    st.success(f"Special tactic '{t['name']}' used this round.")
+                        enc.actions_used += 1
+                        st.success(f"Special tactic '{t['name']}' used this round.")
 
             if make_offer and enc.active:
                 if offer > p["cash"]:
