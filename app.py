@@ -86,24 +86,6 @@ NPC_BEHAVIOR = {
     "PC Supercollector": {"overask": (1.15, 1.3), "min_pct": 0.85},
 }
 
-BUILD_SUMMARY = {
-    "Budget Grinder": (
-        "The Spreadsheet Warrior",
-        "You plan every show like a spreadsheet: budget dialed in, comps memorized, and a firm rule that the hobby must fund itself. "
-        "You’re here to cover the trip and sneak in a smart PC upgrade."
-    ),
-    "PC Diehard": (
-        "The True Believer",
-        "You’re obsessed with one story told in cardboard: your player, your team, your era. "
-        "Profit is nice, but the real win is going home saying, “I finally found it.”"
-    ),
-    "Flipper-in-Training": (
-        "The Hustle Apprentice",
-        "You see the hobby as a living market. You chase comps, edges, and arbitrage, dreaming of turning a small case into a big story. "
-        "You’ll learn that face-to-face deals hit different than online listings."
-    ),
-}
-
 # ---------- Big stages / “gym” equivalents ----------
 
 GYMS = [
@@ -186,17 +168,15 @@ def base_player_state():
     return {
         "name": "",
         "favorite": "",
-        "archetype": None,
-        "cash": 0.0,
+        "cash": 1000.0,
         "stamina": 100,
-        "negotiation_skill": 1.0,
         "day": 1,
         "time_block": "Morning",
         "xp": 0,
         "level": 1,
         "goals": {
             "target_pc_card": "",
-            "profit_target": 0.0,
+            "profit_target": 400.0,
         },
         "collection": [],
         "profit": 0.0,
@@ -204,40 +184,32 @@ def base_player_state():
         "badges": [],
         "elite_defeated": [],
         "champion_defeated": False,
+        # Core attributes
+        "attributes": {
+            "Negotiation": 50,
+            "People Skills": 50,
+            "Card Knowledge": 50,
+            "Hustle": 50,
+        },
+        # Sport / subject lanes
+        "subjects": {
+            "Vintage Baseball": 0,
+            "Vintage Football": 0,
+            "Vintage Basketball": 0,
+            "Vintage Hockey": 0,
+            "Modern Baseball": 0,
+            "Modern Football": 0,
+            "Modern Basketball": 0,
+            "Modern Hockey": 0,
+            "Soccer": 0,
+            "Other / TCG / Non‑sport": 0,
+        },
     }
 
 
 def init_state():
     st.session_state.player = base_player_state()
     st.session_state.encounter: Optional[Encounter] = None
-
-
-def roll_collector_build():
-    player = st.session_state.player
-    archetype = random.choice(["Budget Grinder", "PC Diehard", "Flipper-in-Training"])
-
-    if archetype == "Budget Grinder":
-        cash = 1500.0
-        negotiation_skill = 0.8
-        profit_target = 400.0
-    elif archetype == "PC Diehard":
-        cash = 800.0
-        negotiation_skill = 1.0
-        profit_target = 200.0
-    else:
-        cash = 1000.0
-        negotiation_skill = 1.4
-        profit_target = 600.0
-
-    player["archetype"] = archetype
-    player["cash"] = cash
-    player["negotiation_skill"] = negotiation_skill
-    player["goals"]["profit_target"] = profit_target
-    if not player["goals"]["target_pc_card"]:
-        player["goals"]["target_pc_card"] = (
-            f"Grail for {player['favorite']}" if player["favorite"] else "A true PC grail"
-        )
-    player["build_locked"] = True
 
 
 def advance_flavor_time():
@@ -264,15 +236,60 @@ def add_xp(amount: int):
         advance_flavor_time()
 
 
+# ---------- Subject helper ----------
+
+def subject_score_for_zone(zone: str, subjects: dict) -> float:
+    if zone == "Vintage Alley":
+        total = (
+            subjects["Vintage Baseball"] +
+            subjects["Vintage Football"] +
+            subjects["Vintage Basketball"] +
+            subjects["Vintage Hockey"]
+        )
+        return total / 400.0
+    if zone == "Modern Showcases":
+        total = (
+            subjects["Modern Baseball"] +
+            subjects["Modern Football"] +
+            subjects["Modern Basketball"] +
+            subjects["Modern Hockey"] +
+            subjects["Soccer"]
+        )
+        return total / 500.0
+    if zone == "Dollar Boxes":
+        total = (
+            subjects["Modern Baseball"] +
+            subjects["Modern Football"] +
+            subjects["Modern Basketball"] +
+            subjects["Modern Hockey"] +
+            subjects["Soccer"] +
+            subjects["Other / TCG / Non‑sport"]
+        )
+        return total / 600.0
+    if zone == "Corporate Pavilion":
+        return sum(subjects.values()) / 1000.0
+    if zone == "Trade Night":
+        total = sum(subjects.values()) + subjects["Other / TCG / Non‑sport"]
+        return total / 1100.0
+    return 0.0
+
+
+# ---------- XP helper ----------
+
 def grant_xp_for_deal(zone: str, margin: float, is_trade: bool, is_sale: bool = False):
+    player = st.session_state.player
+    attrs = player["attributes"]
+    subjects = player["subjects"]
+    hustle = attrs["Hustle"]
+
     base = 5
 
     zone_factor = {
         "Dollar Boxes": 0.8,
-        "Vintage Alley": 1.3,
-        "Modern Showcases": 1.1,
+        "Vintage Alley": 1.1,
+        "Modern Showcases": 1.0,
         "Corporate Pavilion": 1.0,
-        "Trade Night": 1.2,
+        "Trade Night": 1.1,
     }.get(zone, 1.0)
 
     margin_xp = max(0.0, margin / 20.0)
@@ -282,10 +299,16 @@ def grant_xp_for_deal(zone: str, margin: float, is_trade: bool, is_sale: bool = 
     if is_sale:
         trade_bonus = 0.9
 
-    total_xp = int((base + margin_xp) * zone_factor * trade_bonus)
+    hustle_bonus = 1.0 + hustle / 500.0
+    zone_subj = subject_score_for_zone(zone, subjects)
+    lane_bonus = 1.0 + 0.5 * zone_subj
+
+    total_xp = int((base + margin_xp) * zone_factor * trade_bonus * hustle_bonus * lane_bonus)
     if total_xp > 0:
         add_xp(total_xp)
 
+
+# ---------- Card / encounter helpers ----------
 
 def generate_cards_for_zone(zone: str, npc_type: str) -> List[Card]:
     base_cards = []
@@ -447,10 +470,27 @@ def evaluate_offer(offer: float) -> str:
     enc = st.session_state.encounter
     player = st.session_state.player
     total_true = sum(c.true_value for c in enc.cards)
-    skill = player["negotiation_skill"]
+
+    attrs = player["attributes"]
+    subjects = player["subjects"]
+    neg = attrs["Negotiation"]
 
     behavior = NPC_BEHAVIOR.get(enc.npc_type, {"min_pct": 0.85})
     base_min_pct = behavior["min_pct"]
+
+    # NPC affinities based on subjects
+    zone_subj = subject_score_for_zone(enc.zone, subjects)
+    if enc.npc_type == "PC Supercollector":
+        base_min_pct -= 0.03 * zone_subj
+    elif enc.npc_type == "Flipper":
+        modern_focus = (
+            subjects["Modern Baseball"] +
+            subjects["Modern Football"] +
+            subjects["Modern Basketball"] +
+            subjects["Modern Hockey"] +
+            subjects["Soccer"]
+        ) / 500.0
+        base_min_pct -= 0.02 * modern_focus
 
     mood_factor = {
         "happy": base_min_pct - 0.05,
@@ -458,16 +498,14 @@ def evaluate_offer(offer: float) -> str:
         "grumpy": base_min_pct + 0.05,
     }[enc.mood]
 
-    if player["archetype"] == "Budget Grinder" and enc.zone == "Dollar Boxes":
-        mood_factor -= 0.03
-    if player["archetype"] == "Flipper-in-Training" and enc.npc_type in ["Dealer", "Flipper"]:
-        mood_factor -= 0.03
-
     hp_factor = max(0.5, enc.npc_hp / enc.npc_max_hp)
     effective_min_pct = mood_factor * enc.price_factor * hp_factor
 
-    skill_discount = 0.03 * (skill - 1)
-    threshold = total_true * max(0.6, effective_min_pct - skill_discount)
+    neg_discount = (neg - 50) / 500.0
+    zone_subj_discount = zone_subj * 0.08
+
+    threshold_pct = max(0.6, effective_min_pct - neg_discount - zone_subj_discount)
+    threshold = total_true * threshold_pct
 
     if offer >= threshold:
         return "accept"
@@ -488,7 +526,6 @@ def finalize_deal(price_paid: float):
     for c in enc.cards:
         player["collection"].append(asdict(c))
 
-    player["negotiation_skill"] = min(5.0, player["negotiation_skill"] + 0.1)
     enc.active = False
     enc.history.append(
         f"Deal done at ${price_paid:.2f}. Estimated value ${total_true:.2f}."
@@ -515,6 +552,15 @@ def compute_collection_value(card_dicts):
 def apply_move(move: str):
     enc = st.session_state.encounter
     npc = enc.npc_type
+    attrs = st.session_state.player["attributes"]
+
+    people = attrs["People Skills"]
+    knowledge = attrs["Card Knowledge"]
+    hustle = attrs["Hustle"]
+
+    social_mul = 0.8 + people / 100.0
+    knowledge_mul = 0.8 + knowledge / 100.0
+    hustle_mul = 0.8 + hustle / 150.0
 
     hp_delta = 0
     price_delta = 0.0
@@ -522,35 +568,37 @@ def apply_move(move: str):
     line = ""
 
     if move == "friendly_chat":
+        base = -10
         if npc in ["Kid Collector", "PC Supercollector"]:
-            hp_delta = -15
-            line = f"{npc}: 'Haha, love talking cards. I can work with you a bit.' (Deal resistance drops.)"
-        else:
-            hp_delta = -5
-            price_delta = 0.05
-            line = f"{npc}: 'Sure, but let's not waste time.' (They nudge their ask up slightly.)"
+            base = -18
+        hp_delta = int(base * social_mul)
+        line = f"{npc}: 'Love talking cards.' (Deal resistance drops.)"
     elif move == "point_flaws":
+        base_hp = -15
+        base_price = -0.06
         if npc in ["Dealer", "Flipper"]:
-            hp_delta = -20
-            price_delta = -0.08
-            line = f"{npc}: 'Fair point on the centering. I can come down some.' (Price softens.)"
-        else:
-            hp_delta = 10
-            line = f"{npc}: 'Hey, I love this card—don't knock it.' (They get a bit defensive.)"
+            base_hp = -22
+            base_price = -0.08
+        hp_delta = int(base_hp * knowledge_mul)
+        price_delta = base_price * knowledge_mul
+        line = f"{npc}: 'Fair point.' (Price softens.)"
     elif move == "lowball_probe":
-        if npc in ["Dealer", "Flipper"]:
-            hp_delta = -10
-            price_delta = 0.05
-            patience_delta = -1
-            line = f"{npc}: 'That's low, but now we’re talking numbers.' (They get a bit annoyed; ask creeps up.)"
-        else:
-            hp_delta = 15
-            patience_delta = -2
-            line = f"{npc}: 'That feels disrespectful.' (They might walk sooner.)"
+        base_hp = -8
+        base_price = 0.05
+        base_patience = -1
+        if npc not in ["Dealer", "Flipper"]:
+            base_hp = 15
+            base_patience = -2
+        hp_delta = int(base_hp * social_mul)
+        price_delta = base_price
+        patience_delta = int(base_patience * hustle_mul)
+        line = f"{npc}: 'That's low.'"
     elif move == "show_comp":
-        hp_delta = -12
-        price_delta = -0.05
-        line = f"{npc}: 'Okay, those comps are solid.' (Ask comes down a bit.)"
+        base_hp = -12
+        base_price = -0.05
+        hp_delta = int(base_hp * knowledge_mul)
+        price_delta = base_price * knowledge_mul
+        line = f"{npc}: 'Those comps are solid.'"
 
     enc.npc_hp = max(0, min(enc.npc_max_hp, enc.npc_hp + hp_delta))
     enc.price_factor = max(0.7, enc.price_factor + price_delta)
@@ -586,17 +634,20 @@ st.markdown(
 
 p = st.session_state.player
 
-# ---------- Sidebar & page selection (Intro hidden after build) ----------
+# ---------- Sidebar & page selection ----------
 
 st.sidebar.title("Trip Status")
 st.sidebar.write(f"Collector: {p['name'] or '—'}")
-st.sidebar.write(f"Build: {p['archetype'] or '—'}")
+st.sidebar.write(f"Fav: {p['favorite'] or '—'}")
 st.sidebar.write(f"Day (chapter): {p['day']}")
 st.sidebar.write(f"Time (flavor): {p['time_block']}")
 st.sidebar.write(f"Level: {p['level']}  |  XP: {p['xp']}")
 st.sidebar.write(f"Cash: ${p['cash']:.2f}")
 st.sidebar.write(f"Stamina: {p['stamina']}")
-st.sidebar.write(f"Negotiation Skill: {p['negotiation_skill']:.1f}")
+attrs_sidebar = p["attributes"]
+st.sidebar.write(
+    f"NEG {attrs_sidebar['Negotiation']} • SOC {attrs_sidebar['People Skills']} • IQ {attrs_sidebar['Card Knowledge']} • HST {attrs_sidebar['Hustle']}"
+)
 st.sidebar.markdown("**Goals**")
 st.sidebar.write(f"Target PC: {p['goals']['target_pc_card'] or '—'}")
 st.sidebar.write(f"Profit target: ${p['goals']['profit_target']:.2f}")
@@ -623,57 +674,94 @@ if page == "Intro & Build":
 
     st.image("001_image.png", use_column_width=True)
     st.markdown(
-        "<p style='margin-top:0.3rem; color:#555;'>Turn your National trip into a story told in cardboard.</p>",
+        "<p style='margin-top:0.3rem; color:#555;'>Create your collector build, then take it onto the show floor.</p>",
         unsafe_allow_html=True,
     )
 
-    st.subheader("Intro & Build")
+    st.subheader("Collector profile")
 
     col1, col2 = st.columns(2)
     with col1:
-        name = st.text_input("Collector name", value=p["name"])
+        p["name"] = st.text_input("Collector name", value=p["name"])
     with col2:
-        favorite = st.text_input("Favorite player or team", value=p["favorite"])
+        p["favorite"] = st.text_input("Favorite player or team", value=p["favorite"])
 
-    target_pc = st.text_input(
+    p["goals"]["target_pc_card"] = st.text_input(
         "Describe your dream PC pickup for this trip",
         value=p["goals"]["target_pc_card"],
     )
 
-    st.write("When you start the trip, the game will randomly assign you a collector build with perks and flaws.")
+    st.divider()
+    st.subheader("Core attributes (0–100)")
 
-    if st.button("Start trip / roll build", disabled=p["build_locked"] and p["archetype"]):
-        p["name"] = name or "Unnamed Collector"
-        p["favorite"] = favorite
-        p["goals"]["target_pc_card"] = target_pc
-        roll_collector_build()
-        st.success("Build locked in! Scroll down to see who you are this trip.")
+    attrs = p["attributes"]
+    attr_budget = 250
+    current_attr_total = sum(attrs.values())
+    attr_remaining = attr_budget - current_attr_total
+    st.markdown(f"**Points to allocate:** {attr_remaining} (budget {attr_budget})")
 
-    if p["archetype"]:
-        title, summary = BUILD_SUMMARY[p["archetype"]]
-        st.divider()
-        st.markdown(
-            f"""
-            <div style="
-                padding:0.9rem 1.1rem;
-                background-color:#ffffff;
-                border-radius:0.9rem;
-                border:2px solid #e0e0ff;
-                box-shadow:0 2px 6px rgba(0,0,0,0.04);
-                margin-bottom:0.8rem;">
-                <p style="margin:0.1rem 0; color:#777;">
-                    Welcome, <b>{p['name']}</b>. Fate dealt you:
-                </p>
-                <p style="margin:0.15rem 0; font-weight:600;">
-                    {p['archetype']} – <span style="color:#e63946;">{title}</span>
-                </p>
-                <p style="margin:0.15rem 0;">
-                    {summary}
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
+    a1, a2 = st.columns(2)
+    with a1:
+        attrs["Negotiation"] = st.slider("Negotiation", 0, 100, attrs["Negotiation"])
+        attrs["Card Knowledge"] = st.slider("Card Knowledge", 0, 100, attrs["Card Knowledge"])
+    with a2:
+        attrs["People Skills"] = st.slider("People Skills", 0, 100, attrs["People Skills"])
+        attrs["Hustle"] = st.slider("Hustle", 0, 100, attrs["Hustle"])
+
+    current_attr_total = sum(attrs.values())
+    attr_remaining = attr_budget - current_attr_total
+
+    st.divider()
+    st.subheader("Subject lanes (0–100 per lane)")
+
+    subj = p["subjects"]
+    subj_budget = 300
+    current_subj_total = sum(subj.values())
+    subj_remaining = subj_budget - current_subj_total
+    st.markdown(f"**Subject points left:** {subj_remaining} (budget {subj_budget})")
+
+    s1, s2 = st.columns(2)
+    with s1:
+        subj["Vintage Baseball"] = st.slider("Vintage Baseball", 0, 100, subj["Vintage Baseball"])
+        subj["Vintage Basketball"] = st.slider("Vintage Basketball", 0, 100, subj["Vintage Basketball"])
+        subj["Modern Baseball"] = st.slider("Modern Baseball", 0, 100, subj["Modern Baseball"])
+        subj["Modern Basketball"] = st.slider("Modern Basketball", 0, 100, subj["Modern Basketball"])
+        subj["Soccer"] = st.slider("Soccer", 0, 100, subj["Soccer"])
+    with s2:
+        subj["Vintage Football"] = st.slider("Vintage Football", 0, 100, subj["Vintage Football"])
+        subj["Vintage Hockey"] = st.slider("Vintage Hockey", 0, 100, subj["Vintage Hockey"])
+        subj["Modern Football"] = st.slider("Modern Football", 0, 100, subj["Modern Football"])
+        subj["Modern Hockey"] = st.slider("Modern Hockey", 0, 100, subj["Modern Hockey"])
+        subj["Other / TCG / Non‑sport"] = st.slider(
+            "Other / TCG / Non‑sport", 0, 100, subj["Other / TCG / Non‑sport"]
         )
+
+    current_subj_total = sum(subj.values())
+    subj_remaining = subj_budget - current_subj_total
+
+    if attr_remaining < 0 or subj_remaining < 0:
+        st.error("You spent more than your budget. Lower at least one slider.")
+    elif attr_remaining > 0 or subj_remaining > 0:
+        st.info("You still have unspent points. Use the sliders to allocate them.")
+    else:
+        st.success("All points allocated. You can start your trip when ready.")
+
+    st.divider()
+    st.subheader("Trip settings")
+
+    p["goals"]["profit_target"] = st.number_input(
+        "Profit target for the trip",
+        0.0, 10000.0, float(p["goals"]["profit_target"]), step=50.0,
+    )
+    p["cash"] = st.number_input(
+        "Starting cash",
+        100.0, 10000.0, float(p["cash"]), step=100.0,
+    )
+
+    start_disabled = attr_remaining != 0 or subj_remaining != 0 or not p["name"]
+    if st.button("Lock in build and start trip", disabled=start_disabled):
+        p["build_locked"] = True
+        st.success("Build locked! Head to the Show Floor to start making deals.")
 
 elif page == "Show Floor":
     st.title("Show Floor")
@@ -973,7 +1061,6 @@ elif page == "Encounter":
                         "Trade Night": 0.05,
                     }.get(enc.zone, 0.0)
 
-                    # FIXED: closed parentheses
                     buy_pct = max(0.4, min(0.9, base_buy_pct + mood_adj + zone_adj))
                     offer_cash = round(total_true_sell * buy_pct, 2)
 
@@ -1066,7 +1153,6 @@ elif page == "Collection & Results":
     st.subheader("Trip summary")
     st.write(f"Trip profit (estimated): ${p['profit']:.2f}")
     st.write(f"Level: {p['level']}  |  XP: {p['xp']}")
-    st.write(f"Negotiation skill: {p['negotiation_skill']:.1f}")
     st.write(f"Big deals closed: {len(p['badges'])} / {len(GYMS)}")
     st.write(f"Influencers out‑negotiated: {len(p['elite_defeated'])} / {len(ELITE_FOUR)}")
     st.write(f"National Whale beaten: {'Yes' if p['champion_defeated'] else 'No'}")
