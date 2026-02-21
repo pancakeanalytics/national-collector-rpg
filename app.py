@@ -701,8 +701,9 @@ with st.sidebar:
 
     gauge_fig.update_layout(
         grid={"rows": 2, "columns": 2, "pattern": "independent"},
-        margin=dict(l=10, r=10, t=20, b=10),
-        height=260,
+        margin=dict(l=0, r=0, t=5, b=0),
+        height=190,        # reduced so gauges fit
+        font=dict(size=10) # smaller text to avoid clipping
     )
 
     st.markdown("**Skills**")
