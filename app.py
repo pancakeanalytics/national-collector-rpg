@@ -162,6 +162,27 @@ CHAMPION = {
     "required_level": 8,
 }
 
+# ---------- Special tactics ----------
+
+SPECIAL_TACTICS = {
+    "Negotiation": {
+        "name": "Anchor & Walk‑Back",
+        "description": "Start with a strong anchor and walk back smoothly without killing the deal.",
+    },
+    "People Skills": {
+        "name": "Dealer Whisperer",
+        "description": "Read body language to know exactly when to push and when to ease off.",
+    },
+    "Card Knowledge": {
+        "name": "Set Historian",
+        "description": "Drop deep set facts that make your valuation hard to argue.",
+    },
+    "Hustle": {
+        "name": "Speed Round",
+        "description": "Scan the table faster and surface more options.",
+    },
+}
+
 # ---------- Game helpers ----------
 
 def base_player_state():
@@ -202,6 +223,8 @@ def base_player_state():
             "Soccer": 0,
             "Other / TCG / Non‑sport": 0,
         },
+        "unlocked_tactics": [],
+        "max_cards_visible": 2,
     }
 
 
@@ -223,15 +246,36 @@ def advance_flavor_time():
 
 def add_xp(amount: int):
     p = st.session_state.player
+    old_level = p["level"]
+
     p["xp"] += amount
     thresholds = [0, 50, 150, 300, 500, 750]
     new_level = p["level"]
     for i, t in enumerate(thresholds, start=1):
         if p["xp"] >= t:
             new_level = i
-    if new_level > p["level"]:
+
+    if new_level > old_level:
         p["level"] = new_level
         advance_flavor_time()
+
+        # Passive skill growth
+        attrs = p["attributes"]
+        growth = 3
+        for key in attrs:
+            attrs[key] = min(100, attrs[key] + growth)
+
+        # See more cards at the table (up to 5 baseline)
+        p["max_cards_visible"] = min(5, p.get("max_cards_visible", 2) + 1)
+
+        # Unlock a special tactic based on current top attribute
+        top_attr = max(attrs, key=lambda k: attrs[k])
+        tactic = SPECIAL_TACTICS.get(top_attr)
+        if tactic:
+            if tactic["name"] not in [t["name"] for t in p["unlocked_tactics"]]:
+                p["unlocked_tactics"].append(
+                    {"name": tactic["name"], "from_attr": top_attr, "level": new_level}
+                )
 
 
 def subject_score_for_zone(zone: str, subjects: dict) -> float:
@@ -940,6 +984,10 @@ elif page == "Encounter":
                 st.write("•", line)
 
             st.markdown("#### Cards on the table")
+
+            visible = p.get("max_cards_visible", 2)
+            cards_to_show = enc.cards[:visible]
+
             st.table(
                 [
                     {
@@ -950,12 +998,23 @@ elif page == "Encounter":
                         "Set": c.set_name,
                         "Ask ($)": c.ask_price,
                     }
-                    for i, c in enumerate(enc.cards)
+                    for i, c in enumerate(cards_to_show)
                 ]
             )
 
+            if len(enc.cards) > visible:
+                st.caption(f"You sense there are more cards in the case… (showing {visible} of {len(enc.cards)}).")
+
         with right_col:
             st.markdown("### Your moves")
+
+            # Card selector for Pancake Analytics
+            pancake_idx = st.selectbox(
+                "Card to consult Pancake Analytics on",
+                options=list(range(len(enc.cards))),
+                format_func=lambda i: f"{enc.cards[i].name} ({enc.cards[i].set_name} {enc.cards[i].year})",
+                key="pancake_card_idx",
+            )
 
             total_ask = sum(c.ask_price for c in enc.cards)
             offer = st.number_input(
@@ -970,6 +1029,8 @@ elif page == "Encounter":
             flaws = b_row1[1].button("Point out flaws")
             lowball = b_row1[2].button("Lowball probe")
 
+            pancake_btn = st.button("Consult Pancake Analytics")
+
             b_row2 = st.columns(3, gap="small")
             comps = b_row2[0].button("Show comps")
             make_offer = b_row2[1].button("Make offer")
@@ -983,6 +1044,59 @@ elif page == "Encounter":
                 apply_move("lowball_probe")
             if comps:
                 apply_move("show_comp")
+
+            # Pancake Analytics: reveal true price for selected card
+            if pancake_btn:
+                target = enc.cards[pancake_idx]
+                enc.history.append(
+                    f"You quietly consult Pancake Analytics on {target.name} "
+                    f"({target.set_name} {target.year}). True value comes back at ${target.true_value:.2f}."
+                )
+                st.info(
+                    f"Pancake Analytics estimate for {target.name} is "
+                    f"${target.true_value:.2f} (ask is ${target.ask_price:.2f})."
+                )
+
+            # Special tactics unlocked by leveling
+            if p["unlocked_tactics"]:
+                st.markdown("#### Special tactics")
+
+                names = [t["name"] for t in p["unlocked_tactics"]]
+                chosen = st.selectbox(
+                    "Pick a special tactic for this round",
+                    options=["(None)"] + names,
+                    key="special_tactic_select",
+                )
+
+                use_tactic = st.button("Use special tactic")
+
+                if use_tactic and chosen != "(None)" and enc.active:
+                    t = next(t for t in p["unlocked_tactics"] if t["name"] == chosen)
+                    origin = t["from_attr"]
+
+                    if origin == "Negotiation":
+                        enc.npc_hp = max(0, enc.npc_hp - 20)
+                        enc.history.append(
+                            f"You use {t['name']} and the dealer suddenly rethinks their anchor price."
+                        )
+                    elif origin == "People Skills":
+                        enc.mood = "happy"
+                        enc.history.append(
+                            f"You use {t['name']} and the table energy shifts in your favor."
+                        )
+                    elif origin == "Card Knowledge":
+                        enc.price_factor = max(0.75, enc.price_factor - 0.1)
+                        enc.history.append(
+                            f"You use {t['name']} and your detailed knowledge softens their pricing."
+                        )
+                    elif origin == "Hustle":
+                        old_visible = p.get("max_cards_visible", 2)
+                        p["max_cards_visible"] = min(6, old_visible + 1)
+                        enc.history.append(
+                            f"You use {t['name']} and quickly scan more of the case for hidden value."
+                        )
+
+                    st.success(f"Special tactic '{t['name']}' used this round.")
 
             if make_offer and enc.active:
                 if offer > p["cash"]:
