@@ -3,6 +3,8 @@ import random
 from dataclasses import dataclass, asdict
 from typing import List, Optional
 
+import plotly.graph_objects as go
+
 # ---------- Page config & global CSS ----------
 
 st.set_page_config(page_title="National Collector RPG", layout="wide")
@@ -85,8 +87,6 @@ NPC_BEHAVIOR = {
     "Flipper": {"overask": (1.25, 1.5), "min_pct": 0.95},
     "PC Supercollector": {"overask": (1.15, 1.3), "min_pct": 0.85},
 }
-
-# ---------- Big stages / “gym” equivalents ----------
 
 GYMS = [
     {
@@ -234,8 +234,6 @@ def add_xp(amount: int):
         advance_flavor_time()
 
 
-# ---------- Subject helper ----------
-
 def subject_score_for_zone(zone: str, subjects: dict) -> float:
     if zone == "Vintage Alley":
         total = (
@@ -272,8 +270,6 @@ def subject_score_for_zone(zone: str, subjects: dict) -> float:
     return 0.0
 
 
-# ---------- XP helper ----------
-
 def grant_xp_for_deal(zone: str, margin: float, is_trade: bool, is_sale: bool = False):
     player = st.session_state.player
     attrs = player["attributes"]
@@ -305,8 +301,6 @@ def grant_xp_for_deal(zone: str, margin: float, is_trade: bool, is_sale: bool = 
     if total_xp > 0:
         add_xp(total_xp)
 
-
-# ---------- Card / encounter helpers ----------
 
 def generate_cards_for_zone(zone: str, npc_type: str) -> List[Card]:
     base_cards = []
@@ -631,35 +625,116 @@ st.markdown(
 
 p = st.session_state.player
 
-# ---------- Sidebar & page selection ----------
+# ---------- Sidebar / HUD ----------
 
-st.sidebar.title("Trip Status")
-st.sidebar.write(f"Collector: {p['name'] or '—'}")
-st.sidebar.write(f"Fav: {p['favorite'] or '—'}")
-st.sidebar.write(f"Day (chapter): {p['day']}")
-st.sidebar.write(f"Time (flavor): {p['time_block']}")
-st.sidebar.write(f"Level: {p['level']}  |  XP: {p['xp']}")
-st.sidebar.write(f"Cash: ${p['cash']:.2f}")
-st.sidebar.write(f"Stamina: {p['stamina']}")
-attrs_sidebar = p["attributes"]
-st.sidebar.write(
-    f"NEG {attrs_sidebar['Negotiation']} • SOC {attrs_sidebar['People Skills']} • IQ {attrs_sidebar['Card Knowledge']} • HST {attrs_sidebar['Hustle']}"
-)
-st.sidebar.markdown("**Goals**")
-st.sidebar.write(f"Target PC: {p['goals']['target_pc_card'] or '—'}")
-st.sidebar.write(f"Profit target: ${p['goals']['profit_target']:.2f}")
-st.sidebar.write(f"Trip profit: ${p['profit']:.2f}")
-st.sidebar.markdown("**Milestones**")
-st.sidebar.write(f"Big deals closed: {len(p['badges'])}")
-st.sidebar.write(f"Influencers out‑negotiated: {len(p['elite_defeated'])}/4")
-st.sidebar.write("National Whale beaten: ✅" if p["champion_defeated"] else "National Whale beaten: ❌")
+with st.sidebar:
+    st.markdown("### Trip HUD")
+
+    col_a, col_b = st.columns([2, 1])
+    with col_a:
+        st.markdown(f"**{p['name'] or 'Collector'}**")
+        st.caption(p["favorite"] or "Set your favorite on Intro page.")
+    with col_b:
+        if st.button("Reset run", key="reset_run"):
+            init_state()
+            st.experimental_rerun()
+        st.button("Help", key="help_btn")
+
+    st.markdown("---")
+
+    st.markdown("**Level & XP**")
+    thresholds = [0, 50, 150, 300, 500, 750, 1100]
+    lvl = p["level"]
+    xp = p["xp"]
+    prev_t = thresholds[max(0, lvl - 1)]
+    next_t = thresholds[min(len(thresholds) - 1, lvl)]
+    span = max(1, next_t - prev_t)
+    pct_to_next = min(1.0, (xp - prev_t) / span)
+    st.write(f"Level {lvl} • XP {xp}/{next_t}")
+    st.progress(pct_to_next)
+
+    st.markdown("---")
+
+    st.markdown("**Resources**")
+    cash_col, stam_col = st.columns(2)
+    with cash_col:
+        st.caption("Cash")
+        st.write(f"${p['cash']:.0f}")
+    with stam_col:
+        st.caption("Stamina")
+        st.progress(min(1.0, p["stamina"] / 100.0))
+    st.caption(f"Trip profit: ${p['profit']:.0f}")
+
+    st.markdown("---")
+
+    attrs_sidebar = p["attributes"]
+    gauge_fig = go.Figure()
+
+    gauge_fig.add_trace(go.Indicator(
+        mode="gauge+number",
+        value=attrs_sidebar["Negotiation"],
+        title={"text": "Negotiation"},
+        domain={"row": 0, "column": 0},
+        gauge={"axis": {"range": [0, 100]}}
+    ))
+    gauge_fig.add_trace(go.Indicator(
+        mode="gauge+number",
+        value=attrs_sidebar["People Skills"],
+        title={"text": "People"},
+        domain={"row": 0, "column": 1},
+        gauge={"axis": {"range": [0, 100]}}
+    ))
+    gauge_fig.add_trace(go.Indicator(
+        mode="gauge+number",
+        value=attrs_sidebar["Card Knowledge"],
+        title={"text": "Knowledge"},
+        domain={"row": 1, "column": 0},
+        gauge={"axis": {"range": [0, 100]}}
+    ))
+    gauge_fig.add_trace(go.Indicator(
+        mode="gauge+number",
+        value=attrs_sidebar["Hustle"],
+        title={"text": "Hustle"},
+        domain={"row": 1, "column": 1},
+        gauge={"axis": {"range": [0, 100]}}
+    ))
+
+    gauge_fig.update_layout(
+        grid={"rows": 2, "columns": 2, "pattern": "independent"},
+        margin=dict(l=10, r=10, t=20, b=10),
+        height=260,
+    )
+
+    st.markdown("**Skills**")
+    st.plotly_chart(gauge_fig, use_container_width=True)
+
+    st.markdown("---")
+
+    st.markdown("**Goals**")
+    st.caption(f"Target PC: {p['goals']['target_pc_card'] or '—'}")
+    st.caption(f"Profit target: ${p['goals']['profit_target']:.0f}")
+    if st.button("View collection", key="sidebar_collection"):
+        st.session_state["_force_page"] = "Collection & Results"
+
+    st.markdown("**Milestones**")
+    st.caption(f"Big deals closed: {len(p['badges'])}/{len(GYMS)}")
+    st.caption(f"Influencers beat: {len(p['elite_defeated'])}/{len(ELITE_FOUR)}")
+    whale = "✅" if p["champion_defeated"] else "❌"
+    st.caption(f"National Whale beaten: {whale}")
+
+# ---------- Page selection ----------
 
 if p["build_locked"]:
     page_options = ["Show Floor", "Encounter", "Big Stages & Legends", "Collection & Results"]
 else:
     page_options = ["Intro & Build", "Show Floor", "Encounter", "Big Stages & Legends", "Collection & Results"]
 
-page = st.sidebar.radio("Go to", page_options)
+default_index = 0
+if "_force_page" in st.session_state and st.session_state["_force_page"] in page_options:
+    default_index = page_options.index(st.session_state["_force_page"])
+    del st.session_state["_force_page"]
+
+page = st.radio("Go to", page_options, index=default_index, horizontal=True)
 
 if not p["build_locked"]:
     page = "Intro & Build"
@@ -669,7 +744,6 @@ if not p["build_locked"]:
 if page == "Intro & Build":
     st.title("National Collector RPG")
 
-    # New layout: image left, all controls right
     left_col, right_col = st.columns([3, 2], gap="large")
 
     with left_col:
