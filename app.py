@@ -667,13 +667,15 @@ with st.sidebar:
 
     st.markdown("---")
 
+    st.markdown("**Skills**")
     attrs_sidebar = p["attributes"]
+
     gauge_fig = go.Figure()
 
     gauge_fig.add_trace(go.Indicator(
         mode="gauge+number",
         value=attrs_sidebar["Negotiation"],
-        title={"text": "Negotiation"},
+        title={"text": "Neg"},
         domain={"row": 0, "column": 0},
         gauge={"axis": {"range": [0, 100]}}
     ))
@@ -687,26 +689,25 @@ with st.sidebar:
     gauge_fig.add_trace(go.Indicator(
         mode="gauge+number",
         value=attrs_sidebar["Card Knowledge"],
-        title={"text": "Knowledge"},
-        domain={"row": 1, "column": 0},
+        title={"text": "Know"},
+        domain={"row": 0, "column": 2},
         gauge={"axis": {"range": [0, 100]}}
     ))
     gauge_fig.add_trace(go.Indicator(
         mode="gauge+number",
         value=attrs_sidebar["Hustle"],
         title={"text": "Hustle"},
-        domain={"row": 1, "column": 1},
+        domain={"row": 0, "column": 3},
         gauge={"axis": {"range": [0, 100]}}
     ))
 
     gauge_fig.update_layout(
-        grid={"rows": 2, "columns": 2, "pattern": "independent"},
-        margin=dict(l=0, r=0, t=5, b=0),
-        height=190,        # reduced so gauges fit
-        font=dict(size=10) # smaller text to avoid clipping
+        grid={"rows": 1, "columns": 4, "pattern": "independent"},
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=140,
+        font=dict(size=9),
     )
 
-    st.markdown("**Skills**")
     st.plotly_chart(gauge_fig, use_container_width=True)
 
     st.markdown("---")
